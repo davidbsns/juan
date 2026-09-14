@@ -28,6 +28,11 @@ pub enum TokenKind {
     Identifier,
     Str,
     UnterminatedStr,
+    Int,
+    Float,
+
+    Plus,
+    Minus,
 
     Eof,
 }
