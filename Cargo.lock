@@ -19,6 +19,7 @@ dependencies = [
 name = "juan-lexer"
 version = "0.1.0"
 dependencies = [
+ "juan-span",
  "phf",
 ]
 

@@ -1,5 +1,7 @@
 pub mod tokens;
 
+use juan_span::Span;
+
 use crate::tokens::KEYWORDS;
 use crate::tokens::Token;
 use crate::tokens::TokenKind;
@@ -22,7 +24,7 @@ impl<'a> Lexer<'a> {
 
         let current_byte = self.text.get(self.cursor);
         let Some(current_byte) = current_byte else {
-            return Token(TokenKind::Eof);
+            return Token::new(TokenKind::Eof, Span::new(self.cursor, self.cursor));
         };
 
         // Single character here, read_identifier manages the rest
@@ -39,8 +41,10 @@ impl<'a> Lexer<'a> {
     }
 
     fn advance(&mut self, kind: TokenKind) -> Token {
+        let start = self.cursor;
         self.cursor += 1;
-        Token(kind)
+
+        Token::new(kind, Span::new(start, self.cursor))
     }
 
     fn skip_whitespace(&mut self) {
@@ -54,6 +58,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn read_string(&mut self) -> Token {
+        let start = self.cursor;
         let mut end = self.cursor + 1;
         while end < self.text.len() {
             let byte = self.text[end];
@@ -65,14 +70,17 @@ impl<'a> Lexer<'a> {
             end += 1;
         }
 
-        let str = &self.text[self.cursor..end];
-        self.cursor = end + 1;
-
-        // TODO: store a span
-        Token(TokenKind::Str(String::from_utf8_lossy(str).to_string()))
+        if end < self.text.len() {
+            self.cursor = end + 1;
+            Token::new(TokenKind::Str, Span::new(start, end + 1))
+        } else {
+            self.cursor = end;
+            Token::new(TokenKind::UnterminatedStr, Span::new(start, end))
+        }
     }
 
     fn read_identifier(&mut self) -> Token {
+        let start = self.cursor;
         let mut end = self.cursor;
         while end < self.text.len() {
             let byte = self.text[end];
@@ -83,19 +91,17 @@ impl<'a> Lexer<'a> {
             end += 1;
         }
 
-        let ident = self.text.get(self.cursor..end);
+        let ident = self.text.get(start..end);
         let Some(ident) = ident else {
-            return Token(TokenKind::Eof);
+            return Token::new(TokenKind::Eof, Span::new(start, end));
         };
 
         self.cursor = end;
 
         if let Some(kind) = KEYWORDS.get(ident) {
-            Token(kind.clone())
+            Token::new(kind.clone(), Span::new(start, end))
         } else {
-            Token(TokenKind::Identifier(
-                String::from_utf8_lossy(ident).to_string(),
-            ))
+            Token::new(TokenKind::Identifier, Span::new(start, end))
         }
     }
 }

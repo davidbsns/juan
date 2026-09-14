@@ -11,8 +11,8 @@ fn main() {
     let mut lexer = Lexer::new(input.as_str());
 
     while let tk = lexer.next_token()
-        && tk.0 != TokenKind::Eof
+        && tk.kind != TokenKind::Eof
     {
-        println!("{:?}", tk)
+        println!("{:?}, {:?}", tk.kind, tk.span.unpack())
     }
 }
