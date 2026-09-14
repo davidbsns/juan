@@ -2,7 +2,6 @@ module main
 
 import std.io
 
-fn main()
+fn main() {
     io.println("Hello, World!")
-end
-
+}
