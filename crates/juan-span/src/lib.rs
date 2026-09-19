@@ -19,6 +19,7 @@ impl Span {
     }
 
     // TODO: maybe i should make this a trait
+
     // Returns the Start and Length of the span.
     pub fn unpack_usize(&self) -> (usize, usize) {
         let span = self.0;

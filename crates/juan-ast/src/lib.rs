@@ -1,5 +1,5 @@
 use juan_span::Span;
-use la_arena::Idx;
+use la_arena::{Arena, Idx};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Op {
@@ -19,6 +19,7 @@ pub enum Expr {
         left: Idx<Node>,
         right: Idx<Node>,
     },
+    Module,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -26,3 +27,6 @@ pub struct Node {
     pub expr: Expr,
     pub span: Span,
 }
+
+pub type SyntaxTree = Arena<Node>;
+pub type NodeId = Idx<Node>;

@@ -102,7 +102,7 @@ Types, values and macros use separate namespaces. An ambiguous use is a compile 
 
 ### 3.4 Packages & Dependencies
 
-A package manifest lists source roots, binary entry points and dependency aliases.
+A package manifest lists source roots and dependency aliases.
 
 The standard library owns the `std` root. A dependency's manifest alias becomes its import root:
 
@@ -126,25 +126,25 @@ An import never increases the visibility of the declaration it names.
 
 ## 4. Control Flow
 
-Control-flow constructs are expressions. Block forms use explicit `end` terminators; braces are reserved for records.
+Control-flow constructs are expressions. Blocks use `{ ... }`.
 
 ### 4.1 Block Values & Newlines
 
-Juan does not use semicolons. A completed newline separates items in a block, and the final bare expression before `end` becomes the value of that block. `return` is only needed to return early.
+Juan does not use semicolons. A completed newline separates items in a block, and the final bare expression before `}` becomes the block's value. `return` is only needed to return early.
 
 ```juan
-fn calculate(): i32
+fn calculate(): i32 {
     let base = 10
     let bonus = 5
     base + bonus
-end
+}
 ```
 
 Earlier bare expressions are evaluated and discarded.
 
 A block with no final expression evaluates to `Unit`. A function with no return type must produce `Unit`. To explicitly discard a non-`Unit` result in the final position, use `let _ = expression`.
 
-Newlines inside `()`, `[]` or `{}` do not finish an expression. A newline also continues after an incomplete token such as an operator, comma, `=`, or `=>`. A line beginning with `|>` continues the previous pipeline, and a line beginning with `.` continues a postfix member or method chain.
+Newlines inside `()`, `[]`, record types and record values do not finish an expression. Inside a block, a newline separates completed items. A newline also continues after an incomplete token such as an operator, comma, `=`, or `=>`. A line beginning with `|>` continues the previous pipeline, and a line beginning with `.` continues a postfix member or method chain.
 
 ```juan
 let total = base +
@@ -159,26 +159,14 @@ Other than the special leading `|>` form, operators must end the line when conti
 
 ### 4.2 Conditional Expressions
 
-`if` expressions can be written as single-line expressions or multi-line blocks. Conditions MUST be `bool`; integers, strings and handles are not implicitly truthy.
-
-#### Single-Line Expression
-```juan
-if true => "True" else => "False"
-```
-
-An inline `if` may not directly contain another unparenthesized inline `if`:
+Conditions MUST be `bool`; integers, strings and handles are not implicitly truthy.
 
 ```juan
-if a => (if b => 1 else => 2) else => 3
-```
-
-#### Multi-Line Block
-```juan
-let text = if true
+let text = if true {
     "True"
-else
+} else {
     "False"
-end
+}
 ```
 
 When an `if` is used as a value it must have an `else`, and all reachable branches must produce compatible types. An `if` used only for its effects may omit the `else` and evaluates to `Unit`.
@@ -186,13 +174,13 @@ When an `if` is used as a value it must have an `else`, and all reachable branch
 `else if` forms one conditional chain:
 
 ```juan
-let text = if score >= 100
+let text = if score >= 100 {
     "Amazing"
-else if score >= 50
+} else if score >= 50 {
     "Good"
-else
+} else {
     "Try again"
-end
+}
 ```
 
 ### 4.3 Loops & Iteration
@@ -201,11 +189,11 @@ end
 Executes a block indefinitely until broken using `break`. A `loop` may also produce a value using `break <expr>`.
 
 ```juan
-let result = loop
-    if ready()
+let result = loop {
+    if ready() {
         break calculate_result()
-    end
-end
+    }
+}
 ```
 
 Every reachable value-carrying `break` in the same loop must produce a compatible type. The repeating loop body itself must produce `Unit`; the value of the entire `loop` expression comes from `break <expr>`.
@@ -214,9 +202,9 @@ Every reachable value-carrying `break` in the same loop must produce a compatibl
 Repeats a block as long as the boolean condition is `true`.
 
 ```juan
-while true
+while true {
     io.println("Still running")
-end
+}
 ```
 
 `while` and its body must produce `Unit`, and `break` may not carry a value inside it.
@@ -226,18 +214,18 @@ Iterates over a range or a collection.
 
 ```juan
 // 0, 1, 2, 3, 4
-for i in 0..5
-    print(i)
-end
+for i in 0..5 {
+    io.println(i)
+}
 
 // 0, 1, 2, 3, 4, 5
-for i in 0..=5
-    print(i)
-end
+for i in 0..=5 {
+    io.println(i)
+}
 
-for item in inventory
+for item in inventory {
     item.do_something()
-end
+}
 ```
 
 `a..b` is a half-open range and excludes `b`. `a..=b` is inclusive. A `for` loop and its body must produce `Unit`, and `break` may not carry a value inside it.
@@ -245,14 +233,14 @@ end
 #### Jump Statements
 * `break`: Immediately breaks the current loop and may return a value only when used with `loop`.
 * `continue`: Stops the current iteration of the loop and proceeds to the next cycle.
-* `return`: Immediately exits the enclosing function and optionally returns a value.
+* `return`: Immediately exits the enclosing function or spawned task body and optionally returns a value.
 
 ```juan
-for i in 0..10
-    if i == 3 => continue
-    if i == 8 => break
+for i in 0..10 {
+    if i == 3 { continue }
+    if i == 8 { break }
     io.println(i)
-end
+}
 ```
 
 `break`, `continue` and `return` have the uninhabited type `Never`. `Never` may also be written as an ordinary return type for a function that never returns.
@@ -262,44 +250,67 @@ end
 `match` checks patterns from top to bottom and must be exhaustive unless the final reachable arm is `_`.
 
 ```juan
-let description = match damage_type
+let description = match damage_type {
     Normal => "Normal"
     Poison => "Poison"
     Fire => "Fire"
-end
+}
 ```
 
-A multi-statement arm MUST use `do ... end`.
+A multi-statement arm uses a block.
 
 ```juan
-match state
+match state {
     Flying => io.println("Flying")
-    Fading { remaining } => do
+    Fading { remaining } => {
         log(remaining)
         io.println(remaining)
-    end
-end
+    }
+}
 ```
 
-There is no arrow after the match value and arms do not use commas. Patterns may contain variants, record fields, literals, bindings and `_`. When a match is used as a value, all reachable arms must produce compatible types.
+There is no arrow after the match value and arms do not use commas. Patterns may contain variants, record fields, literals, bindings and `_`. Every binding position may be prefixed with `mut`; the binding then follows `let mut` rules for the arm it introduces. Record shorthand accepts it in the same way: `Fading { mut remaining }`. When a match is used as a value, all reachable arms must produce compatible types.
+
+```juan
+match enemies.get_mut(handle) {
+    Some(mut enemy) => enemy.health -= 10
+    None => {}
+}
+```
+
+A mutable scoped binding reserves exclusive access for its arm, as elsewhere.
+
+### 4.5 `if let`
+
+`if let` tests one pattern using the `match` pattern grammar:
+
+```juan
+if let Some(mut enemy) = enemies.get_mut(handle) {
+    enemy.health -= 10
+} else {
+    log("stale handle")
+}
+```
+
+Bindings from the pattern are scoped to the first block. When used as a value, `else` is required and both blocks must produce compatible types. When used for effects, `else` may be omitted and the expression produces `Unit`. `else if let` chains are allowed.
 
 ---
 
 ## 5. Functions
 
-Each binary target has one entry function:
+Juan modules expose functions that the host may call:
 
 ```juan
-module main
+module hello
 
 import std.io
 
-fn main()
+pub fn greet() {
     io.println("Hello, World!")
-end
+}
 ```
 
-The package manifest chooses the entry-point module for each binary target. That module must contain exactly one compatible `fn main()`.
+Juan has no reserved entry function. `main` is an ordinary name.
 
 Functions are free functions organized into modules. Juan does not have classes, inheritance or hidden instance methods.
 
@@ -310,9 +321,9 @@ Functions have expression bodies or block bodies. A block body's value follows S
 fn foo(): i32 => 8
 
 // Block function
-fn foo(): i32
+fn foo(): i32 {
     8
-end
+}
 ```
 
 ### 5.1 Parameter Access & Ownership
@@ -324,17 +335,17 @@ Function signatures explicitly publish how each parameter may be accessed. The c
 * `take` — Ownership transfers into the function.
 
 ```juan
-fn inspect(player: Player)
+fn inspect(player: Player) {
     io.println(player.name)
-end
+}
 
-fn reset(mut player: Player)
+fn reset(mut player: Player) {
     player.health = 100.0
-end
+}
 
-fn upload(take pixels: Buffer<u8>): Texture
+fn upload(take pixels: Buffer<u8>): Texture {
     create_texture(pixels)
-end
+}
 ```
 
 A `mut` argument must be a mutable place. Passing an existing value for read or `mut` access does not consume it. A `take` argument becomes moved at the call site and cannot be used again unless reassigned.
@@ -367,20 +378,21 @@ type LoadError = Io(IoError) | Parse(ParseError)
 let convert: fn(IoError): LoadError = LoadError.Io
 ```
 
-### 5.3 Scoped & Escaping Functions
+### 5.3 Function Value Ownership
 
-A plain function value is scoped and may not be stored or returned beyond its allowed region. `escape fn` is an owned callable that may be stored, returned or placed inside a GC-managed value.
+Function types do not expose closure lifetimes or environment ownership. Named functions and union constructors are owned function values and may be stored, returned or placed inside `Rc`, `Pool` or another owner. Returning or storing a callable, or passing it to a `take` function parameter, requires an owned value; a read-only callback parameter may accept a borrowed closure for the duration of the call.
+
+A closure that borrows a local place is scoped to that borrow and cannot escape it. An owned closure uses `move fn`:
 
 ```juan
-fn(EventData)
-escape fn(EventData)
+let upload_later: fn() = move fn() {
+    upload(pixels)
+}
 ```
 
-An escaping callable may be used where a scoped callable is expected. A scoped callable may NOT be used where an escaping callable is required.
+Every referenced copyable capture is copied into an owned closure. Every referenced move-only capture is transferred into it and becomes unavailable in the outer scope. The compiler records closure ownership and structural copy/thread properties in compiled type metadata, not in source-level `fn` syntax.
 
-Named functions and union constructors may convert to `escape fn`.
-
-### 5.4 Closures & Capture Modes
+### 5.4 Closures & Inferred Captures
 
 An anonymous `fn` expression creates a closure. Parameter types may be inferred when an expected function type is known.
 
@@ -388,50 +400,58 @@ An anonymous `fn` expression creates a closure. Parameter types may be inferred 
 let double: fn(i32): i32 = fn(value) => value * 2
 ```
 
-Captures are listed explicitly:
-
-* `read name` — Temporarily reads an outer place. Scoped closures only.
-* `mut name` — Temporarily updates an outer place. Scoped closures only.
-* `copy name` — Copies a recursively copyable value into the closure.
-* `take name` — Moves an owned value into the closure.
+The compiler derives captures from how outer places are used. Reading creates shared scoped access and mutation creates exclusive scoped access. Use `move fn` when the closure must own its environment.
 
 ```juan
 let mut total = 0
 
-let add: fn(i32) = fn[mut total](value)
+let add: fn(i32) = fn(value) {
     total += value
-end
+}
 
 let prefix = "Player"
-let formatter: escape fn(str): str = escape fn[copy prefix](name)
+let formatter: fn(str): str = move fn(name) {
     prefix + ": " + name
-end
+}
 ```
 
-An escaping closure may capture only with `copy` or `take`. Capturing a move-only value requires `take`. A scoped closure may not be returned or stored in an escaping value.
+A borrowed closure may not be returned, stored in an owner or used after any captured place becomes invalid. The diagnostic identifies the capture that prevents escape and suggests `move fn` when ownership transfer is valid.
 
-### 5.5 Function Effects
+### 5.5 Inferred Effects & Guarantees
 
-Effects are part of the function type:
+The compiler infers these properties through function bodies, callbacks, generic operations and destructors:
 
-* `alloc` — Allocates managed runtime memory.
+* `alloc` — Allocates heap memory.
 * `block` — May block the executing host thread.
 * `io` — Reads from or writes to an external system.
 * `nondeterminism` — Observes time, randomness or nondeterministic external state.
 * `host` — Invokes a host operation not described by a narrower effect.
+* `main_thread` — Requires the runtime's designated host thread.
+* `suspend` — Contains a script suspension point.
+
+These inferred properties are stored in compiled interfaces and used for safety, scheduling and optimization.
+
+Host bindings publish the same properties in generated interface metadata. An omitted host property is treated conservatively.
+
+Attributes add declared constraints only when an API needs one:
+
+* `@pure` — No externally observable mutation, I/O, blocking, nondeterminism or host operation. A pure function may allocate its result.
+* `@no_heap_alloc` — Performs no heap allocation, including through calls and destructors. Arena allocation is permitted.
+* `@deterministic` — Produces the same result and observable mutations for the same inputs, independent of time, randomness, scheduling and worker count.
+* `@main_thread` — May run only on the runtime's designated host thread.
+* `@suspend` — Marks a function type whose callable may suspend.
+* `@no_suspend` — Requires a callable not to suspend. This is the default for a bare function type.
 
 ```juan
-fn(i32): str !{alloc} // May allocate
-fn(i32): i32 !{}      // Does not allocate
+@{pure, no_heap_alloc}
+fn add(a: i32, b: i32): i32 => a + b
+
+fn apply(value: i32, operation: @no_heap_alloc fn(i32): i32): i32 {
+    operation(value)
+}
 ```
 
-A function without an effect set is conservatively treated as `!{alloc, block, io, nondeterminism, host}`. `!{}` promises that the call performs no tracked effect. The compiler checks the body, every transitive call, invoked callback, generic operation and destructor on every exit path. Host imports publish their effects in their signatures.
-
-```juan
-fn add(a: i32, b: i32): i32 !{} => a + b
-```
-
-An effect set is usable where any superset is accepted; the reverse is forbidden. Adding an effect to a public function or destructor is a breaking interface change.
+Function constraints are checked transitively. They are the only attributes allowed in function-type position, where they constrain the supplied callable. A callable satisfying more guarantees may be used where fewer are required. A main-thread-restricted callable cannot satisfy an unrestricted function type, while an unrestricted callable may be used in a main-thread-only slot. Refactoring an ordinary function affects a caller only when the caller or callback slot promises a guarantee that the change would violate.
 
 ---
 
@@ -456,27 +476,27 @@ my_var--
 Module constants use `const`:
 
 ```juan
-module main
+module config
 
 import std.io
 
 const NAME: str = "Juan"
 
-fn main()
+pub fn print_name() {
     io.println(NAME)
-end
+}
 ```
 
 You may NOT define a mutable variable in global module scope. Constant initializers must be pure compile-time expressions and may not perform I/O, runtime allocation, environment access, clock reads, randomness or mutable-state access.
 
-`do ... end` creates a value-producing nested scope:
+A brace block creates a value-producing nested scope:
 
 ```juan
-let hp = do
+let hp = {
     let base = 100.0
     let shield = 25.0
     base + shield
-end
+}
 ```
 
 ```juan
@@ -526,14 +546,14 @@ type Foo = {
 let basic_test = Foo { bar = "Test" }
 ```
 
+A record value always begins with its type name. `{ ... }` without a preceding type is a block.
+
 If a variable has the same name as the field, you may use shorthand:
 
 ```juan
 let bar = "Test"
 let basic_test = Foo { bar }
 ```
-
-An anonymous record expression such as `{ bar }` is allowed only when exactly one complete expected record type is known from the surrounding function return, variable type or argument. Otherwise the record type name is required.
 
 A field can be modified only through a mutable place.
 
@@ -562,11 +582,13 @@ pub fn health(player: Player): f32 => player.health
 
 ### 7.3 Copy & Move Classification
 
-Primitive scalars, `str` handles, named functions and records/unions made entirely from copyable fields are copyable.
+Primitive scalars, owned `str`, `Rc<T>`, `Arc<T>`, `Weak<T>`, `ArcWeak<T>`, `Handle<T>`, `Script`, named function values, union constructors and records/unions made entirely from copyable fields are copyable.
 
-`Buffer<T>`, resources and records/unions containing a move-only field are move-only. Assignment, storage, capture or argument passing consumes a move-only value only when ownership is transferred through `take` or another owning position.
+`Buffer<T>`, `Map<K, V, S>`, `Pool<T>`, `Cell<T>`, `Arena`, owned closures, resources and records/unions containing a move-only field are move-only. Assignment, storage, capture or argument passing consumes a move-only value only when ownership is transferred through `take` or another owning position.
 
 Partial moves out of record fields are rejected. A moved binding cannot be used until it is reassigned.
+
+The compiler also infers whether a type is trivially destructible as defined in Section 14.1.
 
 ### 7.4 UFCS
 
@@ -583,6 +605,17 @@ let health = player.health(plr)
 
 `value.function(args)` resolves to a matching free function in the value type's home module or one explicitly imported into the current module. The value becomes the first argument. Exactly one candidate must match.
 
+Any value-producing expression may be the receiver, including literals, constructors, blocks and function results:
+
+```juan
+let shout = "juan".to_uppercase()
+let bounded = 120.clamp(0, 100)
+let length = Vec3 { x = 1.0, y = 2.0, z = 3.0 }.length()
+let name = find_player(id)?.name.trim()
+```
+
+The receiver's static type determines resolution. Context constrains an unsuffixed numeric literal before resolution; without such context it uses the default numeric type. Primitive types have standard-library home modules, so their operations use the same UFCS rules as nominal types.
+
 Field access and UFCS calls are separated syntactically:
 
 ```juan
@@ -591,7 +624,7 @@ player.health()     // Always UFCS
 (player.callback)() // Calls a function stored in a field
 ```
 
-Parameter modes and effects apply through UFCS as they do through a qualified call.
+Parameter modes and guarantees apply through UFCS as they do through a qualified call.
 
 ### 7.5 Operator Overloads
 
@@ -605,9 +638,9 @@ pub type Vec2 = {
     pub y: f32
 }
 
-pub fn new(x: f32, y: f32): Vec2 => { x, y }
-pub fn +(a: Vec2, b: Vec2): Vec2 !{} => { x = a.x + b.x, y = a.y + b.y }
-pub fn *(v: Vec2, s: f32): Vec2 !{} => { x = v.x * s, y = v.y * s }
+pub fn new(x: f32, y: f32): Vec2 => Vec2 { x, y }
+pub fn +(a: Vec2, b: Vec2): Vec2 => Vec2 { x = a.x + b.x, y = a.y + b.y }
+pub fn *(v: Vec2, s: f32): Vec2 => Vec2 { x = v.x * s, y = v.y * s }
 
 let mut a = vec2.new(3.0, 4.0)
 let b = vec2.new(3.0, 4.0)
@@ -624,7 +657,7 @@ An operator overload may only be declared in the module that defines at least on
 Operator precedence cannot be changed. From strongest to weakest:
 
 1. Calls, indexing, field access, UFCS and postfix `?`
-2. Unary `!`, `~` and `-`
+2. Prefix `await`, `!`, `~` and `-`
 3. `*`, `/` and `%`
 4. `+` and `-`
 5. `<<` and `>>`
@@ -667,18 +700,20 @@ pub type Result<T, E> = Ok(T) | Err(E)
 pub fn identity<T>(item: T): T => item
 ```
 
-Public generic requirements are written explicitly as free-function signatures. A generic with requirements uses `where ... do` before its block body:
+Public generic requirements are written explicitly as free-function signatures. The block follows the `where` requirements:
 
 ```juan
-fn keys_equal<K, S>(strategy: S, a: K, b: K): bool !{}
+fn keys_equal<K, S>(strategy: S, a: K, b: K): bool
 where
-    fn equals(strategy: S, a: K, b: K): bool !{}
-do
+    @pure
+    @no_heap_alloc
+    fn equals(strategy: S, a: K, b: K): bool
+{
     equals(strategy, a, b)
-end
+}
 ```
 
-An expression-bodied generic uses `=>` instead of `do` after the requirement list.
+An expression-bodied generic uses `=>` after the requirement list.
 
 Requirements are satisfied in this order:
 
@@ -713,21 +748,61 @@ There is no general-purpose `as` cast in ordinary Juan code. Unsafe host/layout 
 
 ### 7.9 Strings
 
-`str` is immutable, garbage-collected UTF-8 text. Copying a `str` shares its immutable contents instead of copying all of its bytes. String literals use static immutable storage and do not allocate each time they are evaluated.
+`str` is immutable UTF-8 text. An owned `str` is atomically reference-counted; an arena `str` is scoped to its arena as described in Section 14.9. Copying an owned `str` shares its contents. String literals use static immutable storage and do not allocate each time they are evaluated.
 
 `str` does not support integer indexing. The standard library provides byte, Unicode-scalar and text iterators.
 
 Repeated string construction uses `StringBuilder`.
 
+### 7.10 Unit Values
+
+`ByteSize` and `Duration` are compiler-known nominal value types. Their literals include a unit suffix with no intervening whitespace:
+
+```juan
+let arena_size: ByteSize = 1mb
+let timeout: Duration = 250ms
+let loading_timeout = 1min + 30s
+```
+
+Byte-size suffixes are lowercase and use binary multiples:
+
+* `b` — Bytes.
+* `kb` — 1,024 bytes.
+* `mb` — 1,048,576 bytes.
+* `gb` — 1,073,741,824 bytes.
+
+Juan has no bit-size literal suffixes, so `kb` always means kilobytes rather than kilobits.
+
+Duration suffixes are:
+
+* `ns` — Nanoseconds.
+* `us` — Microseconds.
+* `ms` — Milliseconds.
+* `s` — Seconds.
+* `min` — Minutes.
+* `h` — Hours.
+
+`ByteSize` stores a non-negative whole number of bytes and `Duration` stores a non-negative whole number of nanoseconds. A unit literal may use a decimal fraction only when scaling it produces an exact whole number of the base unit:
+
+```juan
+1.5mb  // Valid: 1,572,864 bytes
+0.25ms // Valid: 250,000 nanoseconds
+0.1ns  // Error: smaller than one nanosecond
+```
+
+Overflow and inexact unit literals are compile errors. Unit values do not implicitly convert to or from numeric types; explicit standard-library conversions expose byte, second and nanosecond counts. Their arithmetic uses checked operators and cannot mix `ByteSize` with `Duration`.
+
 ---
 
 ## 8. Arrays, Buffers, Maps & Scoped Access
 
-### 8.1 Scoped Views
+### 8.1 Scoped Borrows
 
-`Slice<T>` and internal `View<T>` values may NOT be returned, stored globally, placed in a GC-managed object, captured by an escaping closure or retained after their owning storage may change. APIs expose them through non-escaping callbacks.
+`View<T>`, `ViewMut<T>`, `Slice<T>`, `SliceMut<T>` and lock views are scoped borrows. They may be returned from an operation, but cannot outlive the storage they borrow. The compiler infers the one source place from which a returned borrow derives and records that parameter position in the compiled interface. A function whose returned borrow could derive from multiple parameters is rejected.
 
-A generic type parameter used in a returned or otherwise escaping position may not be instantiated with a scoped type.
+Borrow scopes end at the last use when possible. A shared borrow may overlap other shared borrows. An exclusive borrow may not overlap any other access to the same storage. A scoped borrow may not be stored globally, placed in an `Rc`, `Arc`, `Pool` or heap container, captured by an owned closure, kept across `await`, or remain live while its owner is moved, resized or destroyed. Section 14.9 defines the narrow rules for same-arena storage and script-owned arena values across script suspension.
+
+Field access, operators and UFCS automatically operate through views. A generic value may contain a scoped type only while the compiler preserves its source provenance; an unconstrained generic result may not erase or extend that scope.
 
 Indexing may create an ephemeral place for the enclosing expression:
 
@@ -746,8 +821,15 @@ The standard canonical form uses its default strategy and is written as `Map<K, 
 ```juan
 type CaseInsensitive = {}
 
-fn equals(strategy: CaseInsensitive, a: str, b: str): bool !{}
-fn hash(strategy: CaseInsensitive, value: str): u64 !{}
+@pure
+@no_heap_alloc
+@deterministic
+fn equals(strategy: CaseInsensitive, a: str, b: str): bool
+
+@pure
+@no_heap_alloc
+@deterministic
+fn hash(strategy: CaseInsensitive, value: str): u64
 
 let users: Map<str, User, CaseInsensitive> = map.new(CaseInsensitive {})
 ```
@@ -757,44 +839,41 @@ A strategy may contain state such as a randomized hash seed, but all values of o
 Map access uses:
 
 * `get_copy(key)` — Returns `Option<V>` and is available only when `V` is copyable.
+* `get(key)` — Returns `Option<View<V>>`.
+* `get_mut(key)` — Returns `Option<ViewMut<V>>` and requires mutable access to the map.
 * `remove(key)` — Returns `Option<V>` and transfers the stored value out.
-* `with(key, callback)` — Gives a scoped read access to the value.
-* `with_mut(key, callback)` — Gives scoped exclusive access to the value.
 
 ```juan
 let score = scores.get_copy("Davey")
 
-let description = scores.with("Davey", fn(score)
-    "Score: " + score.to_string()
-end)
+let score_view = scores.get("Davey")?
+let description = "Score: " + score_view.to_string()
 
-scores.with_mut("Davey", fn(mut score)
-    score += 100
-end)
+let mut mutable_score = scores.get_mut("Davey")?
+mutable_score += 100
 ```
 
-The callbacks are non-escaping. Their result type must be independently escaping and may not contain access derived from the map entry. While `with_mut` holds exclusive access, its callback may not capture or re-enter the same map incompatibly.
+The map cannot be structurally changed while any entry view is live. A mutable entry view reserves exclusive access to the map until its last use.
 
 Updating an existing key keeps its iteration position. Removing and reinserting it places it at the end.
 
 ### 8.3 Buffers & Arrays
 * `Array<T, N>` — Fixed-size inline storage. It may live in a local, another type or heap allocation; it is not guaranteed to be on the stack.
 * `Buffer<T>` — Move-only, dynamically growing owned heap storage.
-* `Slice<T>` — Scoped bounds-checked access to contiguous elements. It does not own them.
+* `Slice<T>` — Scoped read access to contiguous elements.
+* `SliceMut<T>` — Scoped exclusive read/write access to contiguous elements.
 
-A buffer exposes scoped slices using callbacks:
+A buffer returns scoped slices directly:
 
 ```juan
-positions.with_slice(fn(slice: Slice<Vec3>)
-    process(slice)
-end)
+let read_slice = positions.slice()
+process(read_slice)
 
-positions.with_slice_mut(fn(mut slice: Slice<Vec3>)
-    update(slice)
-end)
+let mut write_slice = positions.slice_mut()
+update(write_slice)
 ```
 
-Buffer bounds are checked unless proven valid. Ownership follows the parameter and return rules in Section 5.1.
+The buffer cannot resize, move or be destroyed while a slice is live. Buffer bounds are checked unless proven valid. Ownership follows the parameter and return rules in Section 5.1.
 
 ---
 
@@ -808,10 +887,10 @@ An `Option<T>` is `Some(T)` or `None`.
 
 ### 9.2 Result<T, E>
 
-Postfix `?` extracts `Ok(value)`. If it receives `Err(error)`, it immediately returns that exact error type from the current function.
+Postfix `?` extracts `Ok(value)`. If it receives `Err(error)`, it immediately returns that exact error type from the current function or spawned task body.
 
 ```juan
-fn load_player_config(path: str): Result<Config, LoadError>
+fn load_player_config(path: str): Result<Config, LoadError> {
     let content = read_file(path)
         .map_error(LoadError.Io)?
 
@@ -819,7 +898,7 @@ fn load_player_config(path: str): Result<Config, LoadError>
         .map_error(LoadError.Parse)?
 
     Result.Ok(config)
-end
+}
 ```
 
 Juan does not perform hidden error conversions. `map_error` accepts a function value, and tagged-union constructors such as `LoadError.Io` work directly.
@@ -836,20 +915,18 @@ A move-only resource type may designate exactly one destructor using the built-i
 
 ```juan
 @drop
-fn close(take file: File) !{}
+fn close(take file: File) {
     host.close_file(file.handle)
-end
+}
 ```
 
 `take` transfers cleanup responsibility. An owning value must eventually be returned, moved into another owner, passed to another `take` parameter, explicitly dropped or automatically destroyed at scope exit.
 
-Destruction occurs exactly once in reverse ownership order on normal return, early return and `?` propagation. Partial initialization and failed construction destroy only the fields that became initialized.
+Destruction occurs exactly once in reverse ownership order on normal return, early return, `?` propagation, trap unwinding and script cancellation. Partial initialization and failed construction destroy only the fields that became initialized.
 
-Destructor effects are published in the owning type's compiled interface. An allocation-free function may own a local only when every destructor that can run on its exit paths is also allocation-free, or when ownership is transferred before the exit.
+Destructor effects are inferred and stored in the owning type's compiled interface. An `@no_heap_alloc` function may own a local only when every destructor that can run on its exit paths is also heap-allocation-free, or when ownership is transferred before the exit.
 
-An `@drop` function is not a GC finalizer.
-
-Resource-owning values may not be stored inside ordinary GC-managed objects or escaping closures.
+Resource-owning values may be stored in ordinary owners, `Rc`, `Arc`, `Pool` and owned closures; they are destroyed when their last owner is destroyed. They may not be stored in an arena. Strong reference cycles are the exception described in Section 14.1.
 
 ---
 
@@ -870,9 +947,9 @@ Vector types support element-wise operations with standard arithmetic operators 
 ```juan
 import std.simd
 
-fn process_quad(a: f32x4, b: f32x4): f32x4 !{}
+fn process_quad(a: f32x4, b: f32x4): f32x4 {
     a * b + f32x4.splat(1.0)
-end
+}
 ```
 
 ### 11.3 Lane Masking & Selection
@@ -882,11 +959,11 @@ Conditional vector logic uses lane masks and selection.
 ```juan
 import std.simd
 
-fn clamp_lower(v: f32x4, min_val: f32): f32x4 !{}
+fn clamp_lower(v: f32x4, min_val: f32): f32x4 {
     let limit = f32x4.splat(min_val)
     let mask: mask32x4 = v.greater_than(limit)
     simd.select(mask, v, limit)
-end
+}
 ```
 
 ---
@@ -899,7 +976,24 @@ Attributes are compiler metadata or obligations attached to an existing declarat
 @attribute_name
 @attribute_name(argument)
 @attribute_name(key = value)
+
+@{pure, no_heap_alloc, deterministic}
 ```
+
+An attribute group applies several attributes to the same target. Group members omit their individual `@`, are comma-separated and may use a trailing comma in multiline form:
+
+```juan
+@{
+    requires(amount >= 0),
+    ensures(result >= 0),
+    no_heap_alloc,
+}
+fn calculate(amount: i32): i32 {
+    amount
+}
+```
+
+`@{a, b}` is equivalent to separate `@a` and `@b` prefixes in that source order. Attribute macros inside a group expand in source order. Groups are valid everywhere a single attribute is valid, including function-type position. Empty groups and repeated attributes that do not explicitly support repetition are errors.
 
 Unknown attributes are compile errors.
 
@@ -913,12 +1007,18 @@ Unknown attributes are compile errors.
 * `@layout(c)` — Gives a narrowly allowed record a stable C-compatible ABI layout.
 * `@drop` — Marks the one deterministic destructor for a resource type.
 * `@deprecated(message)` — Produces use-site warnings.
+* `@pure` — Requires a function or callable type to have no externally observable effects.
+* `@no_heap_alloc` — Requires a function or callable type to perform no heap allocation.
+* `@deterministic` — Requires deterministic behavior for equal inputs.
+* `@main_thread` — Restricts a function or callable type to the designated host thread.
+* `@suspend` — Marks a function type whose callable may suspend.
+* `@no_suspend` — Requires a callable not to suspend.
 * `@const` — Marks a pure function as valid in constant evaluation.
 * `@syntax(kind)` — Declares a syntax macro of the specified kind.
 
 Built-in attribute names are reserved and do not require imports. Each built-in defines its legal targets and argument grammar. A package may not shadow one.
 
-Function effects use the type syntax defined in Section 5.5, not attributes.
+Function-constraint attributes may decorate function declarations. `@pure`, `@no_heap_alloc`, `@deterministic`, `@main_thread`, `@suspend` and `@no_suspend` may also appear before a function type or structural function requirement as part of that type.
 
 ### 12.2 Contract Semantics
 
@@ -944,11 +1044,11 @@ A declaration macro uses `fn` with the built-in `@syntax(declaration)` attribute
 
 ```juan
 @syntax(declaration)
-pub fn event($name: identifier, $fields: field*)
-    => type $name = {
+pub fn event($name: identifier, $fields: field*) => {
+    type $name = {
         $fields
     }
-end
+}
 ```
 
 Inside an `@syntax` declaration only:
@@ -965,11 +1065,11 @@ After explicitly importing the macro:
 ```juan
 import { event } from awesome_events.syntax
 
-event Damage
-    source: Entity
-    target: Entity
+event Damage {
+    source: Entity,
+    target: Entity,
     amount: f32
-end
+}
 ```
 
 It expands into an ordinary `Damage` record declaration. Macros extend declaration boundaries; core expression, statement, pattern and type grammar remain closed.
@@ -1007,9 +1107,9 @@ Derives emit free functions and declarations.
 
 Tooling must parse a macro invocation without running user code. At a declaration boundary, an explicitly imported syntax name followed by tokens becomes a generic `SyntaxInvocation` node.
 
-The delimiter scanner gathers tokens through the matching `end`, respecting nested core blocks and balanced `()`, `[]` and `{}`. A macro's compiled interface exposes a declarative parsing schema that the editor may inspect without executing expansion code.
+The delimiter scanner respects balanced `()`, `[]` and `{}`. A macro's compiled interface exposes a declarative parsing schema that the editor may inspect without executing expansion code.
 
-If a tool lacks the macro interface, it preserves the invocation as an opaque token tree. Macro-defined `end` envelopes may not contain another macro-defined `end` envelope; nested core constructs remain valid.
+If a tool lacks the macro interface, it preserves the invocation's balanced delimiters as an opaque token tree.
 
 ### 13.4 Hygiene, Resolution & Expansion
 
@@ -1033,38 +1133,232 @@ Equal macro input, imported interfaces and compiler configuration must produce e
 
 ---
 
-## 14. Garbage Collection, Concurrency & Hot Reload
+## 14. Memory, Concurrency & Hot Reload
 
-### 14.1 Garbage Collection
+### 14.1 Ownership, Shared Values & Handles
 
-Juan uses one isolated managed heap per runtime. The collector is precise, incremental, host-steppable and non-moving. Hosts control work budgets and may request a full collection for diagnostics or retired-code reclamation.
+Juan has no tracing garbage collector. Heap values use deterministic ownership or reference counting. Every value has an inferred ownership class, and destruction never depends on a tracing memory pass.
 
-Managed values include strings, escaping closure environments and graph-shaped scripting objects.
+#### Ownership Classes
 
-Rust and other hosts keep managed values alive through opaque rooting handles. Raw managed-object pointers never become stable public API.
+Every value is one of:
 
-### 14.2 Concurrency
+* **Copyable** — Copied implicitly. Primitive scalars, owned `str`, `Rc<T>`, `Arc<T>`, `Weak<T>`, `ArcWeak<T>`, `Handle<T>`, `Script`, named function values, union constructors and records/unions made entirely from copyable fields.
+* **Move-only** — Transferred through `take` or another owning position. `Buffer<T>`, `Map<K, V, S>`, `Pool<T>`, `Cell<T>`, `Arena`, owned closures, resources and records/unions containing a move-only field.
+* **Scoped** — Borrows described in Section 8.1, including values allocated in an arena. Never owned; cannot outlive their source.
 
-Juan values do not cross threads or runtimes by default. A runtime is scheduled by one host thread at a time. Communication uses copied immutable data, explicitly transferred owned values supported by the host, serialized messages or thread-safe opaque host handles.
+The ownership class belongs to the value, not only its type name. An ordinary `str` is counted; a `str` produced by an arena is scoped to that arena and owns nothing. A scoped `str` cannot be stored where an owned `str` is required.
 
-Shared mutable managed graphs are not supported.
+#### Trivially Destructible Values
 
-### 14.3 Hot-Reload Generations
+A type is **trivially destructible** when destroying it requires no destructor, reference-count decrement or resource cleanup. Scalars, `Handle<T>`, union constructors, SIMD types and records/unions made only from trivially destructible fields qualify. `str`, `Rc`, `Arc`, `Weak`, `ArcWeak`, `Script`, named function values, containers, closures and resources do not.
+
+A named function value is copyable but retains the bytecode generation that created it. Copying it retains that generation; destroying it releases the reference. Release builds contain one generation and elide this counting. Union constructors contain only stable type and variant identifiers and remain trivial.
+
+This property is stored in compiled interfaces and governs what may live in an arena.
+
+#### Destruction
+
+A move-only value is destroyed exactly once at the end of its owner's scope, in reverse declaration order, on normal return, early return, `?` propagation, trap unwinding and script cancellation. A record destroys its fields in reverse declaration order. `@drop` destructors run as part of this order.
+
+A counted allocation is destroyed when its last strong owner is destroyed. Releasing the last reference to a large structure destroys that structure during the release; hosts that need bounded frame time should defer such releases or use an arena. Deterministic destruction is guaranteed for every value not trapped in a strong reference cycle.
+
+#### Strings
+
+`str` is immutable UTF-8 text. An owned `str` has an atomic reference count. Copying it retains the allocation, and the last handle frees the bytes. String literals are static and are never counted or freed. Owned strings are shareable across tasks.
+
+#### Shared Values
+
+`Rc<T>` is a counted, immutable, single-runtime shared value. `Arc<T>` is its cross-task form and requires `T` to be shareable.
+
+```juan
+let config = Rc.new(load_config())
+let same_config = config
+let value = config.max_players
+```
+
+Field access, UFCS and operators operate through `Rc<T>` and `Arc<T>` as through a `View<T>`. Their contents may include resources; `@drop` runs when the last strong owner is destroyed.
+
+`Weak<T>` observes an `Rc<T>` without owning it; `ArcWeak<T>` observes an `Arc<T>`. `upgrade()` returns `Option<Rc<T>>` or `Option<Arc<T>>` and is `None` after the allocation is destroyed. `Weak<T>` is single-runtime; `ArcWeak<T>` is shareable.
+
+#### Reference Cycles
+
+A strong cycle through `Rc` or `Arc` is never freed and its destructors never run. It is a compile error for a type to reach itself through a path containing at least one strong counted edge and no `Weak<T>`, `ArcWeak<T>` or `Handle<T>`. The diagnostic prints the path and recommends `Pool<T>` with `Handle<T>`.
+
+Recursion through unique ownership alone is legal:
+
+```juan
+type Node = {
+    children: Buffer<Node>
+}
+
+type Shared = {
+    children: Buffer<Rc<Shared>> // Error: possible strong cycle
+}
+```
+
+Owned closure environments are checked as records of their capture types within a package. Capture types erased behind a package-boundary `fn` value can still conceal a runtime cycle. Development runtimes can detect and report such cycles on demand and at shutdown; this diagnostic traversal is not part of normal execution.
+
+#### Mutation Through Shared Values
+
+`Cell<T>` provides runtime-checked exclusive access to a value inside `Rc<T>`:
+
+```juan
+let shared = Rc.new(Cell.new(Counter { hits = 0 }))
+
+let mut counter = shared.get_mut()
+counter.hits += 1
+```
+
+`get()` returns `View<T>` and `get_mut()` returns `ViewMut<T>`. Overlapping a mutable view with any other live view of the same cell traps. `Cell<T>` is not shareable; cross-task mutation uses `Arc<Mutex<T>>`, `Arc<RwLock<T>>` or `Arc<Atomic<T>>`.
+
+#### Pools & Handles
+
+`Pool<T>` owns values addressed by generational `Handle<T>`:
+
+```juan
+let mut enemies: Pool<Enemy> = Pool.new()
+let handle = enemies.insert(Enemy { health = 50 })
+
+if let Some(mut enemy) = enemies.get_mut(handle) {
+    enemy.health -= 10
+}
+
+enemies.remove(handle)
+enemies.get(handle) // None
+```
+
+Pool operations are:
+
+* `insert(take value): Handle<T>`
+* `get(handle): Option<View<T>>`
+* `get_mut(handle): Option<ViewMut<T>>` — Requires mutable access to the pool.
+* `remove(handle): Option<T>` — Transfers the value out.
+* `contains(handle): bool`
+
+A handle contains a runtime-unique pool identity, slot index and 32-bit slot generation. Pool identities are never reused during the runtime's life. A handle presented to another pool yields `None`. A slot is permanently retired before its generation would wrap, so a stale handle can never identify a new value. Handles never keep their targets alive.
+
+The pool cannot be structurally changed while an entry view is live. A mutable entry view reserves exclusive access until its last use. Handles are the intended representation of gameplay identities across frames, scripts, tasks and the host boundary.
+
+#### Closures
+
+An owned closure created with `move fn` is move-only, owns its captures and retains its code generation. Storing it in several places uses `Rc<fn(...)>`. A borrowed closure follows Section 8.1.
+
+#### Allocation
+
+Heap allocation has the inferred `alloc` effect. Ownership transfer, counted-handle copies and handle lookups do not allocate. A frame costs its executed work and destructors. Allocation failure traps.
+
+### 14.2 Parallel Execution
+
+A runtime has one designated host thread and a reusable work-stealing pool of OS threads. Juan tasks from the same runtime may execute simultaneously on different CPU cores. The host configures the maximum worker count.
+
+The scheduler may execute work sequentially when parallel execution would cost more. Pure or disjoint-memory computations produce the same result for every worker count; atomics, channels, nondeterministic effects and order-sensitive host operations may observe the unspecified schedule.
+
+### 14.3 Parallel Iteration
+
+`par for` divides an iteration space into jobs, schedules them across the worker pool and joins them before continuing:
+
+```juan
+par for mut enemy in enemies {
+    enemy.position += enemy.velocity * delta
+}
+```
+
+The iterable is evaluated once. Ranges, arrays, buffers and slices are splittable. Host types may expose a checked splittable iteration binding.
+
+* `par for item` gives each job read access to its element.
+* `par for mut item` gives each job exclusive access to a distinct element place and requires a mutable iterable.
+* Every element is visited exactly once, but execution order is unspecified.
+* The body produces `Unit`. `continue` affects one iteration; `break` and control flow out of the enclosing function are forbidden.
+* Captured reads may overlap. Captured writes must be disjoint from every other job or use a synchronized type.
+
+The scheduler chooses job count and grain size. Nested parallel work reuses the same pool rather than creating OS threads recursively.
+
+### 14.4 Parallel Blocks
+
+Each top-level item in a `parallel` block is a child task. All items must produce `Unit`, and the block joins every child before returning `Unit`:
+
+```juan
+parallel {
+    update_physics(world.physics)
+    update_ai(world.ai)
+    update_animation(world.animation)
+}
+```
+
+The compiler derives each child's access from parameter modes and direct place usage. Multiple reads may overlap; a write may not overlap another read or write. Disjoint fields and disjoint indexed regions may execute simultaneously.
+
+The children have no source-order execution guarantee. A trap cancels unfinished siblings, waits for them to stop at task safe points and then propagates.
+
+### 14.5 Structured Tasks
+
+`task` creates a structured task scope. `spawn { ... }` starts a child task and returns a scoped move-only `Task<T>`. Prefix `await` consumes the handle and produces its result:
+
+```juan
+let world_data = task {
+    let terrain = spawn {
+        generate_terrain(seed)
+    }
+
+    let navigation = spawn {
+        build_navigation(snapshot)
+    }
+
+    WorldData {
+        terrain = await terrain,
+        navigation = await navigation
+    }
+}
+```
+
+Spawn captures are inferred as in Section 5.4. Scoped reads and writes are valid because every child finishes before the task scope exits. `move spawn { ... }` transfers every referenced move-only value into the child and copies referenced copyable values. Overlapping task access is rejected as in a `parallel` block.
+
+The spawn body is an implicit function body: its final expression is the task result, and `return` or `?` exits that task rather than the enclosing function. `await` suspends the current Juan task without blocking its OS worker.
+
+A `Task<T>` cannot leave its task scope, be stored in an `Rc` or `Pool`, or be awaited outside its creating scope. Exiting the scope joins unawaited children and discards their results. A trap cancels and joins sibling tasks before propagating. Juan has no detached task syntax.
+
+### 14.6 Thread Safety & Shared Memory
+
+The compiler derives two structural properties for cross-thread values:
+
+* **Movable** — Unique ownership may transfer to another task. All owned fields must also be movable.
+* **Shareable** — Multiple tasks may read the value simultaneously. All reachable mutable state must be synchronized or inaccessible.
+
+Primitive immutable values, `Handle<T>`, owned `str`, named function values, union constructors and records/unions of shareable fields are shareable. `Arc<T>` and `ArcWeak<T>` are shareable when their element type is shareable. `Rc<T>`, `Weak<T>`, `Script` and arena values are not shareable. Buffers and resources are movable when their elements or host declarations permit transfer. Scoped reads and writes may cross worker threads only inside a structured region that joins before their source scope exits.
+
+The standard synchronized types are `Atomic<T>`, `Mutex<T>`, `RwLock<T>` and `Channel<T>`. Mutable state shared by tasks must be inside one of these types. `Mutex.lock()` and `RwLock.write()` return scoped mutable lock views; `RwLock.read()` returns a scoped read lock view:
+
+```juan
+let mut state = game_state.lock()
+state.score += 1
+```
+
+The guard releases on its last use or any earlier scope exit, including `return`, `?` and traps. A lock view cannot escape, remain live across `await`, spawn or blocking work, or overlap acquisition of another lock; Juan code may hold only one lock at a time. Atomic operations are sequentially consistent unless an explicitly named operation selects another ordering.
+
+Channels copy copyable values and transfer move-only values. Closing a channel wakes blocked receivers with `Option.None`; sending to a closed channel returns an error.
+
+Runtime-owned values never span separate runtimes. Cross-runtime communication copies immutable data, transfers supported owned host values, serializes messages or uses thread-safe opaque host handles.
+
+Functions inferred or declared `@main_thread` cannot run in `par for`, `parallel` children or spawned tasks. A host operation is callable on workers only when its binding is not main-thread-restricted. Juan's guarantees do not cover unsound host implementations behind those declarations.
+
+### 14.7 VM Hot-Reload Generations
 
 Hosts may omit hot reload.
 
-Each loaded code module belongs to a generation:
+Hot reload replaces VM bytecode. Ahead-of-time native modules are produced only during the host build and are not Juan hot-reload targets.
+
+Each loaded bytecode module belongs to a generation:
 
 * Existing frames finish using the generation they entered.
 * Existing closures and function values stay bound to the generation that created them.
 * New exported calls use the newest compatible generation.
 * Type-layout or incompatible signature changes require explicit state migration or a clean runtime restart.
 
-A retired generation remains pinned by active frames, Rust roots, registered callbacks, queued tasks, closures or function values in the managed heap. It may be unloaded only after a complete GC trace proves no managed reference reaches it, all external pins are gone and the runtime reaches an unload-safe point.
+A retired generation remains pinned by active frames, running scripts, registered callbacks, queued tasks, and closures or function values stored in any live owner. Every named function value and owned closure holds a generation reference; the containing module, active frames, running scripts and registration sets hold references as well. A generation may be unloaded when its reference count reaches zero and the runtime reaches an unload-safe point.
 
-The runtime reports which roots prevent unloading and may warn or restart a development runtime when retired-generation memory exceeds a configured budget.
+The runtime reports which owners prevent unloading and may warn or restart a development runtime when retired-generation memory exceeds a configured budget.
 
-### 14.4 Initialization & Registration
+### 14.8 Initialization & Registration
 
 General initialization and reloadable callback registration are separate operations.
 
@@ -1075,13 +1369,13 @@ General initialization and reloadable callback registration are separate operati
 Registration receives a capability-limited `Registrations` value and cannot spawn gameplay entities or perform unrelated startup work.
 
 ```juan
-fn register(mut registrations: Registrations)
+fn register(mut registrations: Registrations) {
     registrations.on_update(UpdateRegistration {
         phase = UpdatePhase.Gameplay,
         priority = 0,
         callback = update
     })
-end
+}
 ```
 
 Reload builds a new registration set transactionally. If registration fails, the old set stays active. On success, the host atomically installs the new set and revokes the old generation's registrations.
@@ -1092,25 +1386,256 @@ Registration execution order is deterministic:
 2. Lower numeric priority first.
 3. Fully qualified registration identity as the tie-breaker.
 
+### 14.9 Frame Arenas
+
+An `Arena` is a fixed-capacity bump allocator. Its backing storage is allocated once when the arena is created. Allocation within that storage advances a pointer and never accesses the heap. Resetting or destroying the arena frees all its values together without running individual destructors.
+
+Bump allocation uses shared arena access and may occur while earlier values from that arena remain live because their locations never change. `reset`, `reserve` and destruction require exclusive access and no live derived value.
+
+* Bump allocation within capacity has no `alloc` effect and is allowed under `@no_heap_alloc`.
+* Exhaustion traps and never falls back to the heap.
+* `reset()` retains the backing storage.
+* `reserve(additional: ByteSize)` explicitly grows the backing storage and has the `alloc` effect. No value derived from the arena may be live when it is called.
+
+#### The Host Frame
+
+Before a frame begins, the host configures the `ByteSize` capacities of the frame arena and every worker slice. `begin_frame(dt: Duration)` opens the frame and `end_frame()` closes it. During an open frame, `frame` is a built-in scoped borrow of the host's frame arena. Accessing it outside a frame traps.
+
+```juan
+fn draw_names(world: World) {
+    let mut names = Buffer.new_in(frame)
+
+    for entity in world.visible() {
+        names.push(frame.format("{} ({})", entity.name, entity.id))
+    }
+
+    debug.draw_list(names.slice())
+}
+```
+
+`end_frame()` resets the arena. The compiler prevents every value scoped to that frame from surviving it. Exhaustion reports the allocation site and configured capacity.
+
+#### Arena Values
+
+Standard containers and string operations provide arena forms:
+
+* `Buffer.new_in(arena)`, `Map.new_in(arena)` and `StringBuilder.new_in(arena)`
+* `arena.format(...)`, `arena.concat(a, b)` and `arena.copy_str(text)`
+
+The resulting values are scoped to the arena. They may not be stored in globals, counted owners, pools, heap containers or owned closures. They may be returned only from a function that received their source arena as a parameter.
+
+```juan
+fn describe(arena: Arena, player: Player): str =>
+    arena.format("{} hp={}", player.name, player.health)
+```
+
+An arena string converts to an owned `str` only through `to_owned()`, which allocates on the heap.
+
+#### Element Rules
+
+Every value physically owned by an arena container, including elements, map strategies and other metadata, must be trivially destructible or scoped to the same arena.
+
+```juan
+let entity_handles: Buffer<Handle<Entity>> = Buffer.new_in(frame) // Allowed
+let positions: Buffer<Vec3> = Buffer.new_in(frame)                // Allowed
+let labels: Buffer<str> = Buffer.new_in(frame)                    // Allows frame strings
+let configs: Buffer<Rc<Config>> = Buffer.new_in(frame)            // Error: count decrement
+let files: Buffer<File> = Buffer.new_in(frame)                     // Error: resource cleanup
+```
+
+#### User Arenas
+
+`Arena.new(capacity: ByteSize)` creates an owned, move-only arena and performs one heap allocation:
+
+```juan
+let mut level_memory = Arena.new(1mb)
+let tiles: Buffer<Tile> = Buffer.new_in(level_memory)
+
+level_memory.reset() // Error while `tiles` is live
+```
+
+`reset()`, `reserve()` and destruction require that no derived value is live.
+
+#### Arenas & Scripts
+
+Values belonging to `frame` or an arena merely borrowed by a script may not remain live across a script suspension. Values from an arena owned by the script's coroutine frame may do so.
+
+The owned arena must be declared before its derived values so reverse destruction order remains valid. Once a scoped relationship exists inside a coroutine frame, that frame remains at a fixed address for its lifetime.
+
+```juan
+script.start(move fn() {
+    let mut mission_memory = Arena.new(64kb)
+    let route = Buffer.new_in(mission_memory)
+
+    wait(5s)
+    follow(route.slice())
+})
+```
+
+#### Threads
+
+Each worker thread has its own frame-arena slice, and all slices reset together at `end_frame()`. Arena values are neither shareable nor movable across tasks.
+
+#### Allocation Guarantee
+
+`@no_heap_alloc` forbids heap allocation through the function, its calls and its destructors, but permits bump allocation inside an existing arena. `Rc.new`, `Buffer.new`, `Arena.new`, `Arena.reserve`, `script.start` and `to_owned()` violate it. `Buffer.new_in(frame)` and `frame.format` do not. Because arenas never grow implicitly, exhaustion traps rather than weakening the guarantee.
+
+### 14.10 Scripts
+
+A script is a frame coroutine resumed by the runtime once per tick until it finishes. Scripts express missions, cutscenes, AI behaviours, timed sequences and UI flows. Their sequential portions run on the designated host thread.
+
+#### Starting a Script
+
+```juan
+import std.script
+
+fn on_level_start() {
+    script.start(move fn() {
+        play_cutscene("intro")
+        wait_until(move fn() => cutscene.is_done())
+
+        spawn_enemies(5)
+        wait(2s)
+
+        objective.show("Clear the area")
+        wait_until(move fn() => enemies_alive() == 0)
+
+        objective.complete()
+    })
+}
+```
+
+`script.start(take body: @suspend fn()): Script` accepts an owned callable and allocates a pinned coroutine frame. It has the `alloc` effect. A non-suspending callable is also accepted and finishes on its first tick.
+
+`script.start_with(options, body)` additionally selects a phase and priority:
+
+```juan
+script.start_with(ScriptOptions {
+    phase = UpdatePhase.Gameplay,
+    priority = 10
+}, move fn() {
+    update_objective()
+})
+```
+
+The body's final expression must be `Unit` or `Result<Unit, E>`. `return` completes the script, while `?` completes it with an error delivered to the host's script-error callback together with its identity and trace.
+
+#### Suspension Points
+
+These operations stop the current script slice and resume it on a later tick:
+
+* `yield_frame()` — Resume on the next tick.
+* `wait(duration: Duration)` — Wait on the scheduler's scaled game clock.
+* `wait_realtime(duration: Duration)` — Wait using unscaled wall time.
+* `wait_frames(count: u32)` — Resume after the specified number of ticks.
+* `wait_until(take condition: @no_suspend fn(): bool)` — Poll an owned non-suspending callable at the start of each tick.
+* `wait_for(child: Script)` — Resume after the child finishes or is cancelled.
+* `wait_any(scripts: Slice<Script>): Script` — Copy the handles into owned coroutine state and resume after any finishes. Creating the snapshot has the `alloc` effect.
+
+`wait(0s)` and `wait_frames(0)` are equivalent to `yield_frame()`. A borrowed closure cannot be passed to `wait_until` because the stored callable outlives the current slice.
+
+#### The `suspend` Effect
+
+Calling a suspension point gives a function the inferred, transitive `suspend` effect. Calling a potentially suspending function makes its caller suspending; only a script body is an entry point into a suspending call chain.
+
+Function types publish whether their callable may suspend:
+
+* `@suspend fn()` — May suspend and may be called only from a suspending context.
+* `@no_suspend fn(): bool` — Cannot suspend. This is the default for a bare `fn(...)` type.
+
+A non-suspending callable may satisfy an `@suspend` function type. A suspending callable cannot satisfy a bare or `@no_suspend` function type. Function declarations infer the effect; the attributes are written when a function-type contract requires them.
+
+`@pure` is incompatible with `suspend`, while `@deterministic` and `@no_heap_alloc` may be compatible. `script.start` allocates the coroutine frame once. Afterward, `yield_frame`, `wait`, `wait_frames` and `wait_for` update existing state without allocating. `wait_until` and `wait_any` allocate owned state and violate `@no_heap_alloc`.
+
+```juan
+@no_heap_alloc
+fn countdown(mut timer: Timer) {
+    while timer.remaining > 0 {
+        yield_frame()
+        timer.remaining--
+    }
+}
+```
+
+Suspension points are forbidden inside `par for`, `parallel`, `spawn`, a `wait_until` condition, a destructor, contract, lock scope or constant initializer.
+
+#### Values Across Suspension
+
+Scoped borrows, values belonging to `frame` or a borrowed arena, and ephemeral index places may not remain live across suspension. Owned values, copyable values, counted values, handles, script-owned arenas and values derived from those arenas may remain live.
+
+```juan
+let mut enemy = enemies.get_mut(handle)?
+enemy.alert()
+wait(1s) // Error: `enemy` remains live across suspension
+enemy.attack()
+```
+
+The value must instead be reacquired:
+
+```juan
+enemies.get_mut(handle)?.alert()
+wait(1s)
+enemies.get_mut(handle)?.attack()
+```
+
+#### Scheduler
+
+The host calls `tick(phase, dt)` with a `Duration` delta for each registered phase. Ready scripts run in this deterministic order:
+
+1. Lower numeric priority first.
+2. Earlier start order first.
+
+Each script runs until suspension, completion, trap or cancellation. Sequential script portions never run simultaneously with one another. A script may use `task`, `spawn`, `par for` and `parallel`; that parallel work joins before the script continues. Scripts started during a tick first run on the next tick of their phase.
+
+#### Handles, Completion & Cancellation
+
+`Script` is a copyable, nontrivially destructible handle to a counted completion record. The scheduler holds a strong reference while the script runs. Copying a handle retains the record.
+
+On completion or cancellation, the coroutine frame and its locals are destroyed immediately. The completion record retains its state and error while any handle exists; the last handle frees it.
+
+Script handles provide:
+
+* `is_running(): bool`
+* `finished(): bool`
+* `cancel()` — Request cancellation and destroy live locals in reverse order. A script not yet started never runs its body.
+
+Cancellation is observable inside the script only through destructors. Scripts are unstructured concurrency bounded by ticks and registration lifetime rather than lexical scope.
+
+#### Child Scripts
+
+`script.start_child(take body: @suspend fn()): Script` links a child to the current script. Cancelling the parent cancels the child, and the parent may call `wait_for` on it. A parent that completes normally leaves children running unless `cancel_with_parent` is enabled in its options.
+
+#### Errors & Traps
+
+A trap ends only the affected script, destroys its live locals and reports to the host. A trap in a structured parallel region propagates into its containing script after sibling work is cancelled and joined.
+
+#### Hot Reload
+
+A script belongs to the generation that started it. Running scripts continue in that generation unless the host requests restart-on-reload for their phase. Scripts owned by a revoked registration set are cancelled before the new set is installed. A generation remains pinned while any of its scripts run.
+
+#### Structured Tasks
+
+`task`, `spawn` and `await` remain the structured parallel form for work that finishes within one script slice. `await` may suspend a worker task but never crosses ticks. Work that waits for another frame must be expressed as a script.
+
 ---
 
-## 15. Rust Interoperability & Execution Modes
+## 15. Rust Interoperability & Compilation
 
 Juan is a scripting language for Rust hosts. Its compiler, runtime and embedding library are written in Rust, and generated bindings expose safe Rust APIs.
 
-Separately compiled or hot-reloadable binaries use a stable internal calling convention and layout contract instead of Rust's native ABI and default layouts. No C source API is exposed.
+Juan never links a standalone executable and has no process entry point. A Rust host loads bytecode or links Juan-generated native modules and decides which exported functions to call.
 
-Generated Rust adapters provide typed handles, `Result`, scoped rooting guards, panic containment, access validation and bulk data operations. The low-level boundary uses opaque handles and validated regions; it never creates overlapping Rust `&mut` references.
+Development builds compile every Juan module to bytecode. The embedded VM executes it, replaces compatible module generations during hot reload and preserves all Juan safety checks.
 
-Host functions appear to Juan as typed free functions.
+Release builds compile every included Juan module ahead of time into native objects. The Rust build links or packages those objects with generated metadata and adapters. Release builds do not execute Juan bytecode or require the VM.
 
-Juan supports one semantic language across multiple execution modes:
+The runtime never generates native machine code. Ahead-of-time output is not executable by itself and cannot define a process entry point.
 
-1. A portable bytecode VM for editor use and fast reload.
-2. Ahead-of-time native object generation for production performance.
-3. An optional JIT for supported desktop and editor platforms.
+Native modules and independently compiled host components use a stable internal calling convention and layout contract instead of Rust's native ABI and default layouts. No C source API is exposed.
 
-Every backend must pass the same conformance suite for results, traps, overflow, evaluation order, destruction, GC reachability, contracts, host calls and reload behavior.
+Generated Rust adapters provide typed handles, `Result`, counted-value wrappers, panic containment, access validation and bulk data operations. Owned Juan values move across the boundary. Counted values such as `str`, `Rc`, `Arc`, `Weak`, `ArcWeak`, `Script` and named function values retain and release through generated wrappers. Scoped values are validated for the duration of the call, and Rust never receives a raw pointer into Juan-owned memory. The low-level boundary never creates overlapping Rust `&mut` references.
+
+Host functions appear to Juan as typed free functions. VM and ahead-of-time code must pass the same conformance suite for results, traps, overflow, evaluation order, destruction, reference counting, arena provenance, suspension, contracts, host calls and reload behavior.
 
 ---
 
@@ -1120,11 +1645,22 @@ Identifiers use ASCII letters, numbers and `_`. They must start with a letter or
 
 Integer literals may be decimal, binary (`0b`), octal (`0o`) or hexadecimal (`0x`). Their optional suffix is one of `i8`, `i16`, `i32`, `i64`, `i128`, `isize`, `u8`, `u16`, `u32`, `u64`, `u128` or `usize`; an unconstrained unsuffixed integer defaults to `i32`. Floating-point literals use a decimal fraction, an exponent or an `f32`/`f64` suffix; an unconstrained unsuffixed float defaults to `f64`. Underscores may separate digits but may not begin or end a digit sequence. A leading `-` is the unary operator, not part of a literal.
 
+The built-in unit suffixes `b`, `kb`, `mb`, `gb`, `ns`, `us`, `ms`, `s`, `min` and `h` may follow a decimal integer or floating-point body without whitespace. A literal has either a numeric type suffix or a unit suffix, never both. The lexer uses the longest matching suffix. An underscore may separate digits but may not separate the numeric body from its suffix, so `1_024kb` is valid and `1_kb` is not. Section 7.10 defines unit scaling and exactness.
+
+A decimal point belongs to a numeric literal only when immediately followed by a decimal digit. This keeps literal UFCS calls and ranges unambiguous:
+
+```juan
+0.abs()       // i32 literal followed by UFCS
+0i64.abs()    // explicitly typed i64 literal followed by UFCS
+0.5.floor()   // f64 literal followed by UFCS
+0..10         // integer literal followed by a range
+```
+
 Strings use double quotes and support escapes such as `\n`, `\r`, `\t`, `\\`, `\"` and `\u{1F600}`. A single-quoted literal contains exactly one Unicode scalar and has type `char`. A `b'X'` literal contains one ASCII byte and has type `u8`; a `b"..."` literal contains only bytes and escapes in the range `0..=255` and has type `Array<u8, N>`.
 
-Commas separate arguments, fields, generic arguments and items inside delimiters. A trailing comma is allowed in multiline `()`, `[]` and `{}` lists. Match arms and ordinary newline-separated block items do not use commas.
+Commas separate arguments, record fields and values, generic arguments and array elements. Multiline argument, record and array lists may have a trailing comma. Match arms and block items do not use commas.
 
-Keywords such as `as`, `from`, `where` and `do` are contextual where their grammar position is unambiguous. Built-in attribute and macro syntax names are not ordinary hard keywords.
+Keywords such as `as`, `from`, `where`, `par`, `parallel`, `task`, `spawn`, `await` and `move` are contextual where their grammar position is unambiguous. Built-in attribute and macro syntax names are not ordinary hard keywords.
 
 The parser preserves comments, whitespace, attributes, macro invocations and invalid fragments in a lossless syntax tree. It creates error nodes and continues parsing when possible.
 
@@ -1138,5 +1674,5 @@ Lex
   -> Resolve ordinary names
   -> Check types, access, ownership, escape and effects
   -> Lower to Juan IR
-  -> Execute or generate code
+  -> Emit VM bytecode or a host-linked native object
 ```

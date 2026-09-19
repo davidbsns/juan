@@ -1,26 +1,28 @@
+use juan_ast::{Expr, Literal, Node, NodeId, Op, SyntaxTree};
 use juan_lexer::{
     Lexer,
     tokens::{Token, TokenKind},
 };
 use juan_span::Span;
-use la_arena::{Arena, Idx};
 use thiserror::Error;
-
-use crate::node::{Expr, Literal, Node, Op};
-
-mod node;
 
 // TODO: movee into separate file once big enough
 #[derive(Debug, Error)]
 pub enum ParserError {
     #[error("Unexpected Primary Token: {0:?}")]
     UnexpectedPrimaryToken(TokenKind),
+
+    #[error("Unexpected Token To Parse: {0:?}")]
+    UnexpectedTokenParsed(TokenKind),
+
+    #[error("Unexpected Token gotten: {0:?}, wanted: {0:?}")]
+    UnexpectedTokenParsedAndWanted(TokenKind, TokenKind),
 }
 
 pub struct Parser<'a> {
     lexer: &'a mut Lexer<'a>,
     current_token: Token,
-    tree: Arena<Node>,
+    tree: SyntaxTree,
 }
 
 impl<'a> Parser<'a> {
@@ -30,16 +32,91 @@ impl<'a> Parser<'a> {
         Self {
             lexer,
             current_token,
-            tree: Arena::new(),
+            tree: SyntaxTree::new(),
         }
     }
 
+    pub fn tree(self) -> SyntaxTree {
+        self.tree
+    }
+
     pub fn parse(&mut self) -> Result<(), ParserError> {
-        self.parse_expression()
+        // Modules
+        if self.current_token.kind != TokenKind::Module {
+            return Err(ParserError::UnexpectedTokenParsedAndWanted(
+                self.current_token.kind.clone(),
+                TokenKind::Module,
+            ));
+        }
+        self.parse_module()?;
+
+        loop {
+            match self.current_token.kind {
+                TokenKind::Int => self.parse_expression(),
+
+                TokenKind::Eof => break,
+
+                _ => {
+                    return Err(ParserError::UnexpectedTokenParsed(
+                        self.current_token.kind.clone(),
+                    ));
+                }
+            }?
+        }
+
+        Ok(())
     }
 
     fn advance(&mut self) {
         self.current_token = self.lexer.next_token();
+    }
+
+    fn parse_module(&mut self) -> Result<(), ParserError> {
+        if self.current_token.kind != TokenKind::Module {
+            return Err(ParserError::UnexpectedTokenParsedAndWanted(
+                self.current_token.kind.clone(),
+                TokenKind::Module,
+            ));
+        }
+
+        self.advance();
+
+        if self.current_token.kind != TokenKind::Identifier {
+            return Err(ParserError::UnexpectedTokenParsedAndWanted(
+                self.current_token.kind.clone(),
+                TokenKind::Identifier,
+            ));
+        }
+
+        let (start, len) = self.current_token.span.unpack_usize();
+        let mut end = start + len;
+
+        self.advance();
+
+        while self.current_token.kind == TokenKind::Dot {
+            self.advance();
+
+            if self.current_token.kind != TokenKind::Identifier {
+                return Err(ParserError::UnexpectedTokenParsedAndWanted(
+                    self.current_token.kind.clone(),
+                    TokenKind::Identifier,
+                ));
+            }
+
+            let (start_offset, len_offset) = self.current_token.span.unpack_usize();
+            end = start_offset + len_offset;
+
+            self.advance();
+        }
+
+        let node = Node {
+            expr: Expr::Module,
+            span: Span::new(start, end),
+        };
+
+        self.tree.alloc(node);
+
+        Ok(())
     }
 
     fn parse_expression(&mut self) -> Result<(), ParserError> {
@@ -59,12 +136,12 @@ impl<'a> Parser<'a> {
 
         let binary_op = Expr::BinaryOp { op, left, right };
 
-        let (start, _) = self.tree[left].span.unpack_usize();
-        let (_, end) = self.tree[right].span.unpack_usize();
+        let (left_start, _) = self.tree[left].span.unpack_usize();
+        let (right_start, len) = self.tree[right].span.unpack_usize();
 
         let node = Node {
             expr: binary_op,
-            span: Span::new(start, end),
+            span: Span::new(left_start, right_start + len),
         };
 
         self.tree.alloc(node);
@@ -75,7 +152,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn parse_primary(&mut self) -> Result<Idx<Node>, ParserError> {
+    fn parse_primary(&mut self) -> Result<NodeId, ParserError> {
         match self.current_token.kind {
             TokenKind::Int => {
                 let (start, len) = self.current_token.span.unpack_usize();

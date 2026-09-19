@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use juan_compiler::Compiler;
 use juan_lexer::Lexer;
 use juan_parser::Parser;
 
@@ -18,8 +19,11 @@ fn main() -> Result<(), JuanError> {
 
     let mut lexer = Lexer::new(input.as_str());
     let mut parser = Parser::new(&mut lexer);
+    let mut compiler = Compiler::new();
 
     parser.parse()?;
+    compiler.read_module(parser.tree(), input);
+    compiler.emit()?;
 
     Ok(())
 }

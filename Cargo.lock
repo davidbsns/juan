@@ -9,9 +9,34 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
+name = "juan-ast"
+version = "0.1.0"
+dependencies = [
+ "juan-span",
+ "la-arena",
+]
+
+[[package]]
+name = "juan-bytecode"
+version = "0.1.0"
+dependencies = [
+ "juan-ast",
+]
+
+[[package]]
+name = "juan-compiler"
+version = "0.1.0"
+dependencies = [
+ "juan-ast",
+ "juan-bytecode",
+ "thiserror",
+]
+
+[[package]]
 name = "juan-lang"
 version = "0.0.0"
 dependencies = [
+ "juan-compiler",
  "juan-lexer",
  "juan-parser",
  "thiserror",
@@ -29,9 +54,9 @@ dependencies = [
 name = "juan-parser"
 version = "0.1.0"
 dependencies = [
+ "juan-ast",
  "juan-lexer",
  "juan-span",
- "la-arena",
  "thiserror",
 ]
 

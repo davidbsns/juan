@@ -19,3 +19,6 @@ juan-lang = { version = "0.0.0", path = "crates/juan" }
 juan-lexer = { version = "0.1.0", path = "crates/juan-lexer" }
 juan-parser = { version = "0.1.0", path = "crates/juan-parser" }
 juan-span = { version = "0.1.0", path = "crates/juan-span" }
+juan-ast = { version = "0.1.0", path = "crates/juan-ast" }
+juan-bytecode = { version = "0.1.0", path = "crates/juan-bytecode" }
+juan-compiler = { version = "0.1.0", path = "crates/juan-compiler" }
