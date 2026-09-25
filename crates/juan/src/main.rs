@@ -16,11 +16,10 @@ fn main() -> Result<(), JuanError> {
 
     let mut vm = VM::new();
     let mut lexer = Lexer::new(input.as_str());
-    let mut parser = Parser::new(&mut lexer);
+    let module = Parser::new(&mut lexer).parse()?;
     let mut compiler = Compiler::new();
 
-    parser.parse()?;
-    compiler.read_module(parser.tree(), input);
+    compiler.read_module(&module, input);
     compiler.emit()?;
 
     let math = String::from("math");

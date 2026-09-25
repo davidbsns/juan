@@ -1,4 +1,4 @@
-use juan_ast::{Expr, Literal, Node, NodeId, Op, SyntaxTree};
+use juan_ast::{Expr, Literal, ModuleDecl, Node, NodeId, Op, ParsedModule, SyntaxTree, UnaryOp};
 use juan_lexer::{
     Lexer,
     tokens::{Token, TokenKind},
@@ -13,6 +13,7 @@ pub struct Parser<'a> {
     lexer: &'a mut Lexer<'a>,
     current_token: Token,
     tree: SyntaxTree,
+    expr_roots: Vec<NodeId>,
 }
 
 impl<'a> Parser<'a> {
@@ -23,20 +24,20 @@ impl<'a> Parser<'a> {
             lexer,
             current_token,
             tree: SyntaxTree::new(),
+            expr_roots: Vec::new(),
         }
     }
 
-    pub fn tree(self) -> SyntaxTree {
-        self.tree
-    }
-
-    pub fn parse(&mut self) -> Result<(), ParserError> {
-        self.parse_module()?;
+    pub fn parse(mut self) -> Result<ParsedModule, ParserError> {
+        let decl = self.parse_module()?;
 
         loop {
             match self.current_token.kind {
-                TokenKind::Int => self.parse_term(),
-                TokenKind::LParen => self.parse_term(),
+                TokenKind::Int | TokenKind::LParen | TokenKind::Minus => {
+                    let id = self.parse_term()?;
+                    self.expr_roots.push(id);
+                    Ok(())
+                }
 
                 TokenKind::Eof => break,
 
@@ -48,7 +49,11 @@ impl<'a> Parser<'a> {
             }?;
         }
 
-        Ok(())
+        Ok(ParsedModule {
+            decl,
+            tree: self.tree,
+            expr_roots: self.expr_roots,
+        })
     }
 
     fn advance(&mut self) {
@@ -66,7 +71,7 @@ impl<'a> Parser<'a> {
         Ok(token)
     }
 
-    fn parse_module(&mut self) -> Result<(), ParserError> {
+    fn parse_module(&mut self) -> Result<ModuleDecl, ParserError> {
         self.expect(TokenKind::Module)?;
 
         let token = self.expect(TokenKind::Identifier)?;
@@ -83,14 +88,9 @@ impl<'a> Parser<'a> {
             end = start_offset + len_offset;
         }
 
-        let node = Node {
-            expr: Expr::Module,
-            span: Span::new(start, end),
-        };
-
-        self.tree.alloc(node);
-
-        Ok(())
+        Ok(ModuleDecl {
+            path_span: Span::new(start, end),
+        })
     }
 
     fn allocate(&mut self, left: NodeId, right: NodeId, op: Op) -> NodeId {
@@ -104,16 +104,17 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_factor(&mut self) -> Result<NodeId, ParserError> {
-        let mut left = self.parse_primary()?;
+        let mut left = self.parse_unary()?;
 
         while let Some(op) = match self.current_token.kind {
             TokenKind::Star => Some(Op::Mul),
             TokenKind::Slash => Some(Op::Div),
+            TokenKind::Percent => Some(Op::Rem),
             _ => None,
         } {
             self.advance();
 
-            let right = self.parse_primary()?;
+            let right = self.parse_unary()?;
             left = self.allocate(left, right, op);
         }
 
@@ -139,6 +140,29 @@ impl<'a> Parser<'a> {
         println!("{:?}", self.tree);
 
         Ok(left)
+    }
+
+    fn parse_unary(&mut self) -> Result<NodeId, ParserError> {
+        if self.current_token.kind == TokenKind::Minus {
+            let (start, _) = self.current_token.span.unpack();
+
+            self.advance();
+
+            let operand = self.parse_unary()?;
+            let (op_start, op_len) = self.tree[operand].span.unpack::<usize>();
+
+            let node = Node {
+                expr: Expr::UnaryOp {
+                    op: UnaryOp::Neg,
+                    operand,
+                },
+                span: Span::new(start, op_start + op_len),
+            };
+
+            return Ok(self.tree.alloc(node));
+        }
+
+        self.parse_primary()
     }
 
     fn parse_primary(&mut self) -> Result<NodeId, ParserError> {

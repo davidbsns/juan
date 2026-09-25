@@ -21,11 +21,17 @@ pub enum VMError {
     #[error("Integer overflow: {0} {2} {1}")]
     IntegerOverflow(i32, i32, char),
 
+    #[error("Integer overflow: {1}{0}")]
+    UnaryIntegerOverflow(i32, char),
+
     #[error("Unexpected End of Bytecode: {0}")]
     UnexpectedEndOfBytecode(usize),
 
     #[error("Division by 0")]
     DivisionByZero,
+
+    #[error("Remainder by 0")]
+    RemainderByZero,
 
     #[error("Try from slice error: {0}")]
     TryFromSlice(#[from] TryFromSliceError),

@@ -9,6 +9,8 @@ pub enum Opcode {
     Sub,
     Mul,
     Div,
+    Rem,
+    Neg,
     Halt,
 }
 

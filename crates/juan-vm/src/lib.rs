@@ -54,7 +54,18 @@ impl VM {
                     ptr += 4;
                 }
 
-                Ok(op @ (Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Div)) => {
+                Ok(Opcode::Neg) => {
+                    let Some(operand) = stack.pop() else {
+                        return Err(VMError::StackUnderflow);
+                    };
+
+                    match operand.checked_neg() {
+                        Some(a) => stack.push(a),
+                        None => return Err(VMError::UnaryIntegerOverflow(operand, '-')),
+                    }
+                }
+
+                Ok(op @ (Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Div | Opcode::Rem)) => {
                     let Some(rhs) = stack.pop() else {
                         return Err(VMError::StackUnderflow);
                     };
@@ -66,6 +77,13 @@ impl VM {
                         Opcode::Add => ('+', lhs.checked_add(rhs)),
                         Opcode::Sub => ('-', lhs.checked_sub(rhs)),
                         Opcode::Mul => ('*', lhs.checked_mul(rhs)),
+                        Opcode::Rem => {
+                            if rhs == 0 {
+                                return Err(VMError::RemainderByZero);
+                            }
+
+                            ('%', lhs.checked_rem(rhs))
+                        }
                         Opcode::Div => {
                             if rhs == 0 {
                                 return Err(VMError::DivisionByZero);
