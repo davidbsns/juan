@@ -36,6 +36,8 @@ impl<'a> Lexer<'a> {
             b'}' => self.advance(TokenKind::RBrace),
             b'+' => self.advance(TokenKind::Plus),
             b'-' => self.advance(TokenKind::Minus),
+            b'*' => self.advance(TokenKind::Star),
+            b'/' => self.advance(TokenKind::Slash),
 
             b'0'..=b'9' => self.read_num(),
             b'"' => self.read_string(),

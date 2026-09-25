@@ -54,7 +54,7 @@ impl VM {
                     ptr += 4;
                 }
 
-                Ok(Opcode::Add) => {
+                Ok(op @ (Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Div)) => {
                     let Some(rhs) = stack.pop() else {
                         return Err(VMError::StackUnderflow);
                     };
@@ -62,23 +62,23 @@ impl VM {
                         return Err(VMError::StackUnderflow);
                     };
 
-                    match lhs.checked_add(rhs) {
-                        Some(a) => stack.push(a),
-                        None => return Err(VMError::IntegerOverflow(lhs, rhs, '+')),
-                    }
-                }
+                    let (op_char, res) = match op {
+                        Opcode::Add => ('+', lhs.checked_add(rhs)),
+                        Opcode::Sub => ('-', lhs.checked_sub(rhs)),
+                        Opcode::Mul => ('*', lhs.checked_mul(rhs)),
+                        Opcode::Div => {
+                            if rhs == 0 {
+                                return Err(VMError::DivisionByZero);
+                            }
 
-                Ok(Opcode::Sub) => {
-                    let Some(rhs) = stack.pop() else {
-                        return Err(VMError::StackUnderflow);
-                    };
-                    let Some(lhs) = stack.pop() else {
-                        return Err(VMError::StackUnderflow);
+                            ('/', lhs.checked_div(rhs))
+                        }
+                        _ => unreachable!(),
                     };
 
-                    match lhs.checked_sub(rhs) {
+                    match res {
                         Some(a) => stack.push(a),
-                        None => return Err(VMError::IntegerOverflow(lhs, rhs, '-')),
+                        None => return Err(VMError::IntegerOverflow(lhs, rhs, op_char)),
                     }
                 }
 

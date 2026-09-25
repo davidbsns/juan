@@ -42,6 +42,8 @@ impl Compiler {
                     let opcode = match op {
                         Op::Add => Opcode::Add,
                         Op::Sub => Opcode::Sub,
+                        Op::Mul => Opcode::Mul,
+                        Op::Div => Opcode::Div,
                     };
 
                     chunk.write_opcode(opcode);

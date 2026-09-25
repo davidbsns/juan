@@ -33,6 +33,8 @@ pub enum TokenKind {
 
     Plus,
     Minus,
+    Star,
+    Slash,
 
     Eof,
 }

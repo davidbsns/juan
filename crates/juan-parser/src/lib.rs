@@ -31,24 +31,17 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse(&mut self) -> Result<(), ParserError> {
-        // Modules
-        if self.current_token.kind != TokenKind::Module {
-            return Err(ParserError::UnexpectedTokenParsedAndWanted(
-                self.current_token.kind.clone(),
-                TokenKind::Module,
-            ));
-        }
         self.parse_module()?;
 
         loop {
             match self.current_token.kind {
-                TokenKind::Int => self.parse_expression(),
-                TokenKind::RParen => self.parse_expression(),
+                TokenKind::Int => self.parse_term(),
+                TokenKind::LParen => self.parse_term(),
 
                 TokenKind::Eof => break,
 
                 _ => {
-                    return Err(ParserError::UnexpectedTokenParsed(
+                    return Err(ParserError::UnexpectedToken(
                         self.current_token.kind.clone(),
                     ));
                 }
@@ -62,42 +55,32 @@ impl<'a> Parser<'a> {
         self.current_token = self.lexer.next_token();
     }
 
+    fn expect(&mut self, kind: TokenKind) -> Result<Token, ParserError> {
+        let token = self.current_token.clone();
+        if token.kind != kind {
+            return Err(ParserError::TokenMismatch(token.kind, kind));
+        }
+
+        self.advance();
+
+        Ok(token)
+    }
+
     fn parse_module(&mut self) -> Result<(), ParserError> {
-        if self.current_token.kind != TokenKind::Module {
-            return Err(ParserError::UnexpectedTokenParsedAndWanted(
-                self.current_token.kind.clone(),
-                TokenKind::Module,
-            ));
-        }
+        self.expect(TokenKind::Module)?;
 
-        self.advance();
+        let token = self.expect(TokenKind::Identifier)?;
 
-        if self.current_token.kind != TokenKind::Identifier {
-            return Err(ParserError::UnexpectedTokenParsedAndWanted(
-                self.current_token.kind.clone(),
-                TokenKind::Identifier,
-            ));
-        }
-
-        let (start, len) = self.current_token.span.unpack();
+        let (start, len) = token.span.unpack();
         let mut end = start + len;
-
-        self.advance();
 
         while self.current_token.kind == TokenKind::Dot {
             self.advance();
 
-            if self.current_token.kind != TokenKind::Identifier {
-                return Err(ParserError::UnexpectedTokenParsedAndWanted(
-                    self.current_token.kind.clone(),
-                    TokenKind::Identifier,
-                ));
-            }
+            let token = self.expect(TokenKind::Identifier)?;
 
-            let (start_offset, len_offset) = self.current_token.span.unpack::<usize>();
+            let (start_offset, len_offset) = token.span.unpack::<usize>();
             end = start_offset + len_offset;
-
-            self.advance();
         }
 
         let node = Node {
@@ -110,8 +93,37 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn parse_expression(&mut self) -> Result<NodeId, ParserError> {
+    fn allocate(&mut self, left: NodeId, right: NodeId, op: Op) -> NodeId {
+        let (left_start, _) = self.tree[left].span.unpack();
+        let (right_start, len) = self.tree[right].span.unpack::<usize>();
+
+        self.tree.alloc(Node {
+            expr: Expr::BinaryOp { op, left, right },
+            span: Span::new(left_start, right_start + len),
+        })
+    }
+
+    fn parse_factor(&mut self) -> Result<NodeId, ParserError> {
         let mut left = self.parse_primary()?;
+
+        while let Some(op) = match self.current_token.kind {
+            TokenKind::Star => Some(Op::Mul),
+            TokenKind::Slash => Some(Op::Div),
+            _ => None,
+        } {
+            self.advance();
+
+            let right = self.parse_primary()?;
+            left = self.allocate(left, right, op);
+        }
+
+        println!("{:?}", self.tree);
+
+        Ok(left)
+    }
+
+    fn parse_term(&mut self) -> Result<NodeId, ParserError> {
+        let mut left = self.parse_factor()?;
 
         while let Some(op) = match self.current_token.kind {
             TokenKind::Plus => Some(Op::Add),
@@ -120,15 +132,8 @@ impl<'a> Parser<'a> {
         } {
             self.advance();
 
-            let right = self.parse_primary()?;
-
-            let (left_start, _) = self.tree[left].span.unpack();
-            let (right_start, len) = self.tree[right].span.unpack::<usize>();
-
-            left = self.tree.alloc(Node {
-                expr: Expr::BinaryOp { op, left, right },
-                span: Span::new(left_start, right_start + len),
-            });
+            let right = self.parse_factor()?;
+            left = self.allocate(left, right, op);
         }
 
         println!("{:?}", self.tree);
@@ -159,21 +164,14 @@ impl<'a> Parser<'a> {
             TokenKind::LParen => {
                 self.advance();
 
-                let idx = self.parse_expression()?;
+                let idx = self.parse_term()?;
 
-                if self.current_token.kind != TokenKind::RParen {
-                    return Err(ParserError::UnexpectedTokenParsedAndWanted(
-                        self.current_token.kind.clone(),
-                        TokenKind::RParen,
-                    ));
-                }
-
-                self.advance();
+                self.expect(TokenKind::RParen)?;
 
                 Ok(idx)
             }
 
-            _ => Err(ParserError::UnexpectedPrimaryToken(
+            _ => Err(ParserError::UnexpectedToken(
                 self.current_token.kind.clone(),
             )),
         }

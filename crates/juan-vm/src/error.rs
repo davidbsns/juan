@@ -24,6 +24,9 @@ pub enum VMError {
     #[error("Unexpected End of Bytecode: {0}")]
     UnexpectedEndOfBytecode(usize),
 
+    #[error("Division by 0")]
+    DivisionByZero,
+
     #[error("Try from slice error: {0}")]
     TryFromSlice(#[from] TryFromSliceError),
 

@@ -5,6 +5,8 @@ use la_arena::{Arena, Idx};
 pub enum Op {
     Add,
     Sub,
+    Mul,
+    Div,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]

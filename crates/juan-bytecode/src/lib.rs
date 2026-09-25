@@ -7,6 +7,8 @@ pub enum Opcode {
     PushInt,
     Add,
     Sub,
+    Mul,
+    Div,
     Halt,
 }
 
