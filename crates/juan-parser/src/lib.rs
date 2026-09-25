@@ -4,20 +4,10 @@ use juan_lexer::{
     tokens::{Token, TokenKind},
 };
 use juan_span::Span;
-use thiserror::Error;
 
-// TODO: movee into separate file once big enough
-#[derive(Debug, Error)]
-pub enum ParserError {
-    #[error("Unexpected Primary Token: {0:?}")]
-    UnexpectedPrimaryToken(TokenKind),
+use crate::error::ParserError;
 
-    #[error("Unexpected Token To Parse: {0:?}")]
-    UnexpectedTokenParsed(TokenKind),
-
-    #[error("Unexpected Token gotten: {0:?}, wanted: {0:?}")]
-    UnexpectedTokenParsedAndWanted(TokenKind, TokenKind),
-}
+pub mod error;
 
 pub struct Parser<'a> {
     lexer: &'a mut Lexer<'a>,

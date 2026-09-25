@@ -45,6 +45,7 @@ dependencies = [
  "juan-compiler",
  "juan-lexer",
  "juan-parser",
+ "juan-vm",
  "thiserror",
 ]
 
@@ -71,6 +72,14 @@ name = "juan-span"
 version = "0.1.0"
 dependencies = [
  "num-traits",
+]
+
+[[package]]
+name = "juan-vm"
+version = "0.1.0"
+dependencies = [
+ "juan-bytecode",
+ "thiserror",
 ]
 
 [[package]]

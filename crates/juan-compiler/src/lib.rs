@@ -69,4 +69,8 @@ impl Compiler {
 
         Ok(())
     }
+
+    pub fn get_chunk(&self, name: String) -> Option<&Chunk> {
+        self.chunks.get(&name)
+    }
 }

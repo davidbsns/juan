@@ -15,4 +15,5 @@ categories = ["compilers", "command-line-utilities"]
 juan-lexer.workspace = true
 juan-parser.workspace = true
 juan-compiler.workspace = true
+juan-vm.workspace = true
 thiserror.workspace = true

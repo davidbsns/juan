@@ -4,19 +4,17 @@ use std::path::Path;
 use juan_compiler::Compiler;
 use juan_lexer::Lexer;
 use juan_parser::Parser;
+use juan_vm::VM;
 
 use crate::error::JuanError;
 
 mod error;
 
-// TODO: convert this into a .lib with a Juan struct and then
-// create like a juan-emulator main.rs that uses said Juan struct
-// as this is embedded with rust and shouldnt be like this... lol
-
 fn main() -> Result<(), JuanError> {
     let path = Path::new("./samples/math.juan");
     let input = fs::read_to_string(path).expect("Invalid input");
 
+    let mut vm = VM::new();
     let mut lexer = Lexer::new(input.as_str());
     let mut parser = Parser::new(&mut lexer);
     let mut compiler = Compiler::new();
@@ -24,6 +22,12 @@ fn main() -> Result<(), JuanError> {
     parser.parse()?;
     compiler.read_module(parser.tree(), input);
     compiler.emit()?;
+
+    let math = String::from("math");
+    let chunk = compiler.get_chunk(math.clone()).unwrap();
+
+    vm.load(math.clone(), chunk.clone())?;
+    vm.run(math)?;
 
     Ok(())
 }

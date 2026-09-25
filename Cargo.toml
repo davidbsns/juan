@@ -23,3 +23,4 @@ juan-span = { version = "0.1.0", path = "crates/juan-span" }
 juan-ast = { version = "0.1.0", path = "crates/juan-ast" }
 juan-bytecode = { version = "0.1.0", path = "crates/juan-bytecode" }
 juan-compiler = { version = "0.1.0", path = "crates/juan-compiler" }
+juan-vm = { version = "0.1.0", path = "crates/juan-vm" }
