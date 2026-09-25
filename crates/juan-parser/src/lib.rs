@@ -43,6 +43,7 @@ impl<'a> Parser<'a> {
         loop {
             match self.current_token.kind {
                 TokenKind::Int => self.parse_expression(),
+                TokenKind::RParen => self.parse_expression(),
 
                 TokenKind::Eof => break,
 
@@ -150,6 +151,23 @@ impl<'a> Parser<'a> {
                 };
 
                 let idx = self.tree.alloc(node);
+                self.advance();
+
+                Ok(idx)
+            }
+
+            TokenKind::LParen => {
+                self.advance();
+
+                let idx = self.parse_expression()?;
+
+                if self.current_token.kind != TokenKind::RParen {
+                    return Err(ParserError::UnexpectedTokenParsedAndWanted(
+                        self.current_token.kind.clone(),
+                        TokenKind::RParen,
+                    ));
+                }
+
                 self.advance();
 
                 Ok(idx)
