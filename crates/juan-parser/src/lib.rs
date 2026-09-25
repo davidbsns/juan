@@ -88,7 +88,7 @@ impl<'a> Parser<'a> {
             ));
         }
 
-        let (start, len) = self.current_token.span.unpack_usize();
+        let (start, len) = self.current_token.span.unpack();
         let mut end = start + len;
 
         self.advance();
@@ -103,7 +103,7 @@ impl<'a> Parser<'a> {
                 ));
             }
 
-            let (start_offset, len_offset) = self.current_token.span.unpack_usize();
+            let (start_offset, len_offset) = self.current_token.span.unpack::<usize>();
             end = start_offset + len_offset;
 
             self.advance();
@@ -136,8 +136,8 @@ impl<'a> Parser<'a> {
 
         let binary_op = Expr::BinaryOp { op, left, right };
 
-        let (left_start, _) = self.tree[left].span.unpack_usize();
-        let (right_start, len) = self.tree[right].span.unpack_usize();
+        let (left_start, _) = self.tree[left].span.unpack();
+        let (right_start, len) = self.tree[right].span.unpack::<usize>();
 
         let node = Node {
             expr: binary_op,
@@ -155,7 +155,7 @@ impl<'a> Parser<'a> {
     fn parse_primary(&mut self) -> Result<NodeId, ParserError> {
         match self.current_token.kind {
             TokenKind::Int => {
-                let (start, len) = self.current_token.span.unpack_usize();
+                let (start, len) = self.current_token.span.unpack();
                 let str = &self.lexer.src[start..start + len];
                 // We can be certain it's valid UTF-8 & i64. (I think)
                 let str = std::str::from_utf8(str).expect("invalid UTF-8");

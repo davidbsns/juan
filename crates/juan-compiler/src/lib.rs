@@ -27,7 +27,7 @@ impl Compiler {
         for (_, node) in tree {
             match node.expr {
                 Expr::Module => {
-                    let (start, len) = node.span.unpack_usize();
+                    let (start, len) = node.span.unpack();
                     module_name = Some(&src[start..start + len]);
                 }
 
@@ -38,15 +38,13 @@ impl Compiler {
                     }
                 },
 
-                Expr::BinaryOp {
-                    op,
-                    left: _,
-                    right: _,
-                } => match op {
-                    Op::Add => {
-                        chunk.write_opcode(Opcode::Add);
-                    }
-                },
+                Expr::BinaryOp { op, .. } => {
+                    let opcode = match op {
+                        Op::Add => Opcode::Add,
+                    };
+
+                    chunk.write_opcode(opcode);
+                }
             }
         }
 

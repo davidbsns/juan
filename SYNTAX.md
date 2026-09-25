@@ -130,7 +130,7 @@ Control-flow constructs are expressions. Blocks use `{ ... }`.
 
 ### 4.1 Block Values & Newlines
 
-Juan does not use semicolons. A completed newline separates items in a block, and the final bare expression before `}` becomes the block's value. `return` is only needed to return early.
+Juan does not use statement semicolons. A completed newline separates items in a block, and the final bare expression before `}` becomes the block's value. `return` is only needed to return early.
 
 ```juan
 fn calculate(): i32 {
@@ -140,7 +140,7 @@ fn calculate(): i32 {
 }
 ```
 
-Earlier bare expressions are evaluated and discarded.
+Earlier bare expressions are evaluated and discarded. Discarding a `Result` without handling it produces a warning; `let _ = expression` explicitly acknowledges dismissal.
 
 A block with no final expression evaluates to `Unit`. A function with no return type must produce `Unit`. To explicitly discard a non-`Unit` result in the final position, use `let _ = expression`.
 
@@ -228,7 +228,19 @@ for item in inventory {
 }
 ```
 
-`a..b` is a half-open range and excludes `b`. `a..=b` is inclusive. A `for` loop and its body must produce `Unit`, and `break` may not carry a value inside it.
+A range `a..b` excludes `b`; `a..=b` includes it. Ranges advance by one, are empty when the start exceeds the end, and never overflow after their last element. Bounds are evaluated once, left to right.
+
+`for item in collection` borrows the collection and gives read access to each element. `for mut item in collection` requires a mutable collection and gives exclusive access to each element in turn. Neither form consumes the collection. A loop and its body produce `Unit`; `break` cannot carry a value.
+
+```juan
+for mut enemy in enemies {
+    enemy.health -= damage
+}
+```
+
+Arrays, buffers and slices iterate by increasing index, maps by insertion order, and pools by occupied slot index. Structural mutation of a collection is forbidden while its iterator is live. Each element borrow ends before advancing; it cannot be retained into a later iteration.
+
+Custom iteration uses public home-module operations `iter(collection): I` or `iter_mut(mut collection): I`, followed by `next(mut iterator: I): Option<T>`. The iterator borrows the collection; a scoped result of `next` borrows the iterator until that result's last use. These operations follow structural requirement resolution from Section 7.7. Owned iteration is explicit through `into_iter(take collection)`. Normal completion, `break`, return and traps destroy the iterator and any unconsumed owned elements.
 
 #### Jump Statements
 * `break`: Immediately breaks the current loop and may return a value only when used with `loop`.
@@ -278,7 +290,9 @@ match enemies.get_mut(handle) {
 }
 ```
 
-A mutable scoped binding reserves exclusive access for its arm, as elsewhere.
+A `mut` pattern binding makes the binding mutable; it does not turn shared access into exclusive access. Mutation through a `ViewMut` retains that view's existing exclusive access.
+
+Matching an existing place borrows it. Copyable payload bindings copy their values; move-only payload bindings borrow them. A mutable payload borrow requires mutable access to the source. To consume a move-only union, use `match take value`; this consumes the complete scrutinee, transfers selected payloads and destroys any unmatched fields. Matching an owned temporary consumes it. The same rules apply to `if let`, including `if let PATTERN = take value`. The scrutinee is evaluated once.
 
 ### 4.5 `if let`
 
@@ -348,7 +362,7 @@ fn upload(take pixels: Buffer<u8>): Texture {
 }
 ```
 
-A `mut` argument must be a mutable place. Passing an existing value for read or `mut` access does not consume it. A `take` argument becomes moved at the call site and cannot be used again unless reassigned.
+A `mut` argument must be a mutable place. Passing an existing value for read or `mut` access does not consume it. A `take` argument moves a move-only value; a copyable argument supplies an owned copy. A moved place cannot be used again unless reassigned.
 
 Two overlapping places may not receive incompatible access during the same call. Multiple reads are allowed. A write may not overlap another live read or write.
 
@@ -382,15 +396,29 @@ let convert: fn(IoError): LoadError = LoadError.Io
 
 Function types do not expose closure lifetimes or environment ownership. Named functions and union constructors are owned function values and may be stored, returned or placed inside `Rc`, `Pool` or another owner. Returning or storing a callable, or passing it to a `take` function parameter, requires an owned value; a read-only callback parameter may accept a borrowed closure for the duration of the call.
 
-A closure that borrows a local place is scoped to that borrow and cannot escape it. An owned closure uses `move fn`:
+A closure that borrows a local place is scoped to that borrow and cannot escape it. An owned closure uses `move fn`.
+
+Every referenced copyable capture is copied into an owned closure. Every referenced move-only capture is transferred into it and becomes unavailable in the outer scope.
+
+The compiler infers invocation access separately from capture ownership:
+
+* `fn(T): R` — Repeated calls with read access to the environment.
+* `mut fn(T): R` — Repeated calls requiring exclusive access to the environment.
+* `take fn(T): R` — One call consuming the environment.
+
+A read callable may satisfy a mutable or consuming callable type; a mutable callable may satisfy a consuming callable type. The reverse conversions are forbidden. Calling a `mut fn` requires a mutable callable place; calling a `take fn` consumes it. A closure that moves a capture out during invocation is a consuming callable even when its creation uses `move fn`.
 
 ```juan
-let upload_later: fn() = move fn() {
+let upload_later: take fn(): Texture = move fn() {
     upload(pixels)
 }
+let texture = upload_later()
+// Calling upload_later again is an error.
 ```
 
-Every referenced copyable capture is copied into an owned closure. Every referenced move-only capture is transferred into it and becomes unavailable in the outer scope. The compiler records closure ownership and structural copy/thread properties in compiled type metadata, not in source-level `fn` syntax.
+In function types, attributes precede the optional invocation mode: `@suspend take fn()`. This is distinct from a parameter's access mode: `take body: take fn()` transfers ownership of a callable that can be invoked once.
+
+Owned callable slots conservatively carry runtime environment metadata, are move-only unless a copyable wrapper is used, and cannot assume thread safety from a bare `fn` signature. Converting a named function to such a slot preserves its generation retention. Direct named-function values remain copyable. Read callback parameters may borrow scoped environments but cannot retain them.
 
 ### 5.4 Closures & Inferred Captures
 
@@ -405,7 +433,7 @@ The compiler derives captures from how outer places are used. Reading creates sh
 ```juan
 let mut total = 0
 
-let add: fn(i32) = fn(value) {
+let mut add: mut fn(i32) = fn(value) {
     total += value
 }
 
@@ -471,7 +499,15 @@ let mut my_var = 8
 my_var--
 ```
 
-`++` and `--` are standalone update statements only. They may NOT be placed inside another expression, so `array[i++]`, `use(i++)` and `let old = i++` are syntax errors. The updated place is evaluated exactly once.
+Postfix `++` and `--` are standalone numeric update statements, equivalent to `+= 1` and `-= 1`. Prefix forms and expression uses such as `array[i++]` are errors. They produce no value and evaluate the destination exactly once.
+
+Operands, the call receiver, arguments and record initializers are evaluated left to right in source order. Assignment evaluates the destination place before its right-hand side. Boolean operators short-circuit. A skipped branch performs no evaluation or moves.
+
+Integer division truncates toward zero; remainder has the dividend's sign. Integer division by zero and the minimum signed integer divided by `-1` trap. Shift counts must be non-negative and smaller than the left operand's bit width; otherwise they trap. Signed right shift extends the sign; unsigned right shift fills with zero. Left shift discards shifted-out bits and does not use arithmetic-overflow trapping.
+
+Floating-point operations use the declared IEEE binary32 or binary64 format, including infinities and NaNs. Floating-point division by zero follows IEEE behavior. NaN compares unequal to every value, including itself; ordered comparisons with NaN are false. Implicit reassociation and fused operations that change observable results are forbidden; explicit library operations may request them.
+
+Primitive scalars compare by value, strings by text contents, and handles by full identity. Records and tagged unions have no automatic fieldwise equality unless declared or derived. Derived equality compares corresponding fields and requires equality for every field. Ordering is not synthesized from equality.
 
 Module constants use `const`:
 
@@ -564,6 +600,16 @@ basic_test.bar = "Test2" // Error
 let mut basic_test = Foo { bar }
 basic_test.bar = "Test2" // Works
 ```
+
+Fields may declare pure constant defaults using `field: Type = expression`. Construction evaluates supplied fields in written order and fills omitted fields from their defaults. Every other field is required.
+
+Record update uses a final `..base` entry:
+
+```juan
+let options = SpawnOptions { speed = 4.0, ..defaults }
+```
+
+The base is evaluated once after explicit initializers. Copyable records copy the remaining fields; a move-only base must be transferred with `..take base`, consuming the complete base and destroying replaced fields. Update of a type with a custom destructor is rejected. Construction and update obey field visibility.
 
 A public record may contain private or package-visible fields. If any required field is inaccessible, outside code cannot construct the record directly and must use a constructor function.
 
@@ -697,7 +743,7 @@ Types and functions may be generic.
 
 ```juan
 pub type Result<T, E> = Ok(T) | Err(E)
-pub fn identity<T>(item: T): T => item
+pub fn identity<T>(take item: T): T => item
 ```
 
 Public generic requirements are written explicitly as free-function signatures. The block follows the `where` requirements:
@@ -731,7 +777,13 @@ Juan has no associated types; use an explicit type parameter:
 fn next<I, T>(mut iterator: I): Option<T>
 ```
 
-Type parameters may have defaults. Defaulted parameters must follow required parameters, and callers may omit only a trailing run of them.
+Type parameters may have defaults. Defaulted parameters must follow required parameters, and callers may omit only a trailing run of them. Constant parameters declare their type: `type Batch<T, const N: usize> = { items: Array<T, N> }`.
+
+Structural property requirements use `T: Copyable`, `T: TriviallyDestructible`, `T: Movable` or `T: Shareable` in the `where` list. These are compiler predicates, not user-defined traits. A generic body may assume only its declared properties and operations.
+
+Scope provenance propagates through generic substitution and aggregates. A value containing a scoped field is itself scoped; a mutable borrow is never made copyable by wrapping it. An owning container rejects scoped elements unless its arena rules explicitly allow them. Compiled interfaces preserve return provenance, constraints, invocation modes and effects. Type erasure cannot discard a property that a caller needs to establish safety.
+
+A generic returning ownership must receive ownership or require `Copyable`; read parameters do not authorize moving out. Structural function requirements specify their access, invocation and effect contracts independently of a concrete implementation.
 
 ### 7.8 Explicit Conversions
 
@@ -739,8 +791,8 @@ Juan does not implicitly convert between numeric or nominal types. Conversions u
 
 ```juan
 let wide = i64.from(small)             // Guaranteed lossless
-let value = i32.try_from(large)?       // Checked
-let value = i32.truncating(decimal)    // Explicit truncation
+let checked_value = i32.try_from(large)? // Checked
+let truncated = i32.truncating(decimal) // Explicit truncation
 let bits = u32.wrapping_from(signed)   // Explicit wrapping
 ```
 
@@ -753,6 +805,14 @@ There is no general-purpose `as` cast in ordinary Juan code. Unsafe host/layout 
 `str` does not support integer indexing. The standard library provides byte, Unicode-scalar and text iterators.
 
 Repeated string construction uses `StringBuilder`.
+
+Interpolated strings have an `f` prefix:
+
+```juan
+let message = f"Player {player.name}: {score}"
+```
+
+Each braced expression is evaluated once, left to right, and formatted through the standard formatting operation for its static type. `{{` and `}}` produce literal braces. Plain strings do not interpolate. Interpolation returns an owned `str` and conservatively has the heap-allocation effect; arena formatting remains explicit through `arena.format`.
 
 ### 7.10 Unit Values
 
@@ -782,7 +842,7 @@ Duration suffixes are:
 * `min` — Minutes.
 * `h` — Hours.
 
-`ByteSize` stores a non-negative whole number of bytes and `Duration` stores a non-negative whole number of nanoseconds. A unit literal may use a decimal fraction only when scaling it produces an exact whole number of the base unit:
+`ByteSize` stores a `u64` count of bytes and `Duration` a `u64` count of nanoseconds. Both are copyable and trivially destructible. Arena capacities must additionally fit the target's addressable allocation size. A unit literal may use a decimal fraction only when scaling it produces an exact whole number of the base unit:
 
 ```juan
 1.5mb  // Valid: 1,572,864 bytes
@@ -790,7 +850,11 @@ Duration suffixes are:
 0.1ns  // Error: smaller than one nanosecond
 ```
 
-Overflow and inexact unit literals are compile errors. Unit values do not implicitly convert to or from numeric types; explicit standard-library conversions expose byte, second and nanosecond counts. Their arithmetic uses checked operators and cannot mix `ByteSize` with `Duration`.
+Overflow and inexact unit literals are compile errors. Literal scaling uses exact decimal arithmetic, never an intermediate floating-point value.
+
+Values of the same unit type support comparisons, addition and subtraction. Overflow and negative results trap. Multiplication by `u64` returns the unit type with overflow checks. Division by `u64` returns the unit type, truncating toward zero in base units: `1s / 3` is `333_333_333ns`. Division of two values of the same unit type returns an `f64` ratio: `1s / 250ms` is `4.0`. Any zero divisor traps. Other mixed-unit operators are errors.
+
+There are no implicit numeric conversions. `ByteSize.from_bytes(u64)` and `Duration.from_nanos(u64)` construct exact values; `bytes()` and `nanos()` expose their counts. `Duration.seconds_f64()` explicitly converts to approximate seconds for physics and animation math. `Duration.try_from_seconds(f64)` rejects negative, non-finite, out-of-range or fractional-nanosecond results.
 
 ---
 
@@ -800,7 +864,7 @@ Overflow and inexact unit literals are compile errors. Unit values do not implic
 
 `View<T>`, `ViewMut<T>`, `Slice<T>`, `SliceMut<T>` and lock views are scoped borrows. They may be returned from an operation, but cannot outlive the storage they borrow. The compiler infers the one source place from which a returned borrow derives and records that parameter position in the compiled interface. A function whose returned borrow could derive from multiple parameters is rejected.
 
-Borrow scopes end at the last use when possible. A shared borrow may overlap other shared borrows. An exclusive borrow may not overlap any other access to the same storage. A scoped borrow may not be stored globally, placed in an `Rc`, `Arc`, `Pool` or heap container, captured by an owned closure, kept across `await`, or remain live while its owner is moved, resized or destroyed. Section 14.9 defines the narrow rules for same-arena storage and script-owned arena values across script suspension.
+Borrow scopes end at the last use when possible. A shared borrow may overlap other shared borrows. An exclusive borrow may not overlap any other access to the same storage. A scoped borrow may not be stored globally, placed in an `Rc`, `Arc`, `Pool` or heap container, captured by an owned closure, kept across `await`, or remain live while its owner is moved, resized or destroyed. Sections 14.9 and 14.10 define same-arena storage and the limited suspension exceptions for script-owned storage and helper parameters.
 
 Field access, operators and UFCS automatically operate through views. A generic value may contain a scoped type only while the compiler preserves its source provenance; an unconstrained generic result may not erase or extend that scope.
 
@@ -863,6 +927,16 @@ Updating an existing key keeps its iteration position. Removing and reinserting 
 * `Slice<T>` — Scoped read access to contiguous elements.
 * `SliceMut<T>` — Scoped exclusive read/write access to contiguous elements.
 
+Array literals use `[a, b, c]` and produce `Array<T, N>`. Elements are evaluated left to right, copied or moved into the array, and must share one element type. `[]` requires context for `T`. Repetition uses `[value; N]`, where `N` is a constant `usize`; it evaluates `value` once and requires a copyable element. The semicolon is only a delimiter inside repetition literals, never a statement separator.
+
+```juan
+let checkpoints = [start, bridge, finish]
+let counters: Array<i32, 8> = [0; 8]
+let items = Buffer.from_array([first, second])
+```
+
+Indexing uses `usize` indices and bounds-checks access. Reading a copyable element copies it; moving an element out requires a container removal operation. A range index `items[start..end]` yields a read `Slice<T>`, with omitted bounds defaulting to zero and length. Invalid ranges trap. `slice_mut(start..end)` returns an exclusive mutable range; `slice_mut()` selects the whole collection.
+
 A buffer returns scoped slices directly:
 
 ```juan
@@ -883,7 +957,7 @@ Optional values use `Option<T>` and recoverable failures use `Result<T, E>`.
 
 ### 9.1 Option<T>
 
-An `Option<T>` is `Some(T)` or `None`.
+An `Option<T>` is `Some(T)` or `None`. Postfix `?` extracts `Some(value)` or returns `None` from the enclosing `Option`-returning function. It performs no conversion to `Result`. A script body returning `Unit` or `Result` must handle `None` explicitly or convert it with `ok_or(error)` before using `?`.
 
 ### 9.2 Result<T, E>
 
@@ -903,7 +977,7 @@ fn load_player_config(path: str): Result<Config, LoadError> {
 
 Juan does not perform hidden error conversions. `map_error` accepts a function value, and tagged-union constructors such as `LoadError.Io` work directly.
 
-Bounds failures, failed runtime safety checks and violated runtime invariants trap. Integer overflow and division by zero trap in every build profile; explicit `checked_*`, `wrapping_*` and `saturating_*` operations provide alternate behavior.
+Bounds failures, failed runtime safety checks and violated runtime invariants trap. Integer arithmetic overflow and integer division by zero trap in every build profile; explicit `checked_*`, `wrapping_*` and `saturating_*` operations provide alternate behavior.
 
 ---
 
@@ -920,7 +994,11 @@ fn close(take file: File) {
 }
 ```
 
-`take` transfers cleanup responsibility. An owning value must eventually be returned, moved into another owner, passed to another `take` parameter, explicitly dropped or automatically destroyed at scope exit.
+The standard `drop(take value)` operation destroys a value immediately. Ownership transfer passes cleanup responsibility to the new owner. Reassigning an initialized owning place first evaluates the replacement, then destroys the old value, then installs the replacement.
+
+A custom `@drop` body runs once before automatic field cleanup and can inspect the value's initialized fields. Its special consuming parameter is not recursively destroyed by the destructor's own exit. Fields are then destroyed in reverse declaration order; the destructor cannot move out or explicitly destroy those fields.
+
+Destructors cannot suspend. If a destructor traps, remaining initialized fields and outer owners are still cleaned up; additional destructor traps are attached to the original failure rather than restarting unwinding. Fatal host termination is outside this cleanup guarantee.
 
 Destruction occurs exactly once in reverse ownership order on normal return, early return, `?` propagation, trap unwinding and script cancellation. Partial initialization and failed construction destroy only the fields that became initialized.
 
@@ -1004,7 +1082,7 @@ Unknown attributes are compile errors.
 * `@invariant(condition)` — Defines a type or loop invariant.
 * `@decreases(expression)` — Supplies a termination measure for recursive or verified code.
 * `@trusted(reason)` — Creates an explicitly reviewed verification boundary.
-* `@layout(c)` — Gives a narrowly allowed record a stable C-compatible ABI layout.
+* `@layout(c, align = N)` / `@layout(c, packed)` — Controls eligible record layout as defined in Section 12.2.
 * `@drop` — Marks the one deterministic destructor for a resource type.
 * `@deprecated(message)` — Produces use-site warnings.
 * `@pure` — Requires a function or callable type to have no externally observable effects.
@@ -1015,16 +1093,43 @@ Unknown attributes are compile errors.
 * `@no_suspend` — Requires a callable not to suspend.
 * `@const` — Marks a pure function as valid in constant evaluation.
 * `@syntax(kind)` — Declares a syntax macro of the specified kind.
+* `@derive(names...)` — Applies imported declarative derives to a type.
 
 Built-in attribute names are reserved and do not require imports. Each built-in defines its legal targets and argument grammar. A package may not shadow one.
 
 Function-constraint attributes may decorate function declarations. `@pure`, `@no_heap_alloc`, `@deterministic`, `@main_thread`, `@suspend` and `@no_suspend` may also appear before a function type or structural function requirement as part of that type.
 
-### 12.2 Contract Semantics
+### 12.2 Record Layout
+
+`@layout(c)` preserves declaration order using the target C ABI's field sizes and alignment. Eligible fields are fixed-width numeric primitives, fixed arrays of eligible elements, and other explicitly laid-out eligible records. Counted values, resources, handles, callable values, scoped values and implicit tagged-union layouts are ineligible.
+
+```juan
+@layout(c, align = 16)
+type Vertex = {
+    position: Array<f32, 3>,
+    weight: f32
+}
+
+@layout(c, packed)
+type Header = {
+    kind: u8,
+    length: u32
+}
+```
+
+`align = N` requires a supported positive power of two and raises minimum record alignment. `packed` preserves field order, removes inter-field padding and sets record alignment to one. The modifiers cannot be combined. Nested record layouts remain unchanged. A packed record cannot contain an explicitly over-aligned record, directly or through nested fields.
+
+Padding and trailing size follow the selected representation. Packing does not specify byte order or a wire format. A layout change is an incompatible hot-reload change.
+
+Primitive packed fields support copied reads and writes through compiler-generated unaligned access. Forming a typed view or passing an insufficiently aligned field through ordinary read or `mut` access is rejected; copy it into an aligned local first. There is no implicit copy-back for a mutable argument.
+
+`size_of<T>()` and `align_of<T>()` return constant `ByteSize` values. `offset_of<T>(field)` returns a constant byte offset for an accessible field of an explicitly laid-out record. These operations expose no pointer and do not authorize reading padding bytes.
+
+### 12.3 Contract Semantics
 
 Contract expressions are pure. They may not mutate, allocate runtime objects, perform I/O, read clocks or randomness, or call functions whose effects are incompatible with specification evaluation.
 
-`old(expression)` denotes the logical value of an expression in the function's pre-state.
+`old(expression)` denotes a value captured before the function body executes. The expression must be specification-pure and copyable without heap allocation; resource owners and live borrows are ineligible. In `@ensures`, `result` names the returned value and is read-only. Postconditions run after return-value evaluation and before local destruction; they do not run on traps or cancellation.
 
 Contracts are checked at runtime unless the compiler proves them. A proven check may be omitted without changing the contract's meaning. Failed checks identify the contract, source location and relevant values.
 
@@ -1151,7 +1256,7 @@ The ownership class belongs to the value, not only its type name. An ordinary `s
 
 #### Trivially Destructible Values
 
-A type is **trivially destructible** when destroying it requires no destructor, reference-count decrement or resource cleanup. Scalars, `Handle<T>`, union constructors, SIMD types and records/unions made only from trivially destructible fields qualify. `str`, `Rc`, `Arc`, `Weak`, `ArcWeak`, `Script`, named function values, containers, closures and resources do not.
+A type is **trivially destructible** when destroying it requires no destructor, reference-count decrement or resource cleanup. Scalars, `ByteSize`, `Duration`, `Handle<T>`, union constructors, SIMD types, fixed arrays of trivial elements and records/unions made only from trivially destructible fields qualify. `str`, `Rc`, `Arc`, `Weak`, `ArcWeak`, `Script`, named function values, containers, closures and resources do not.
 
 A named function value is copyable but retains the bytecode generation that created it. Copying it retains that generation; destroying it releases the reference. Release builds contain one generation and elide this counting. Union constructors contain only stable type and variant identifiers and remain trivial.
 
@@ -1169,7 +1274,7 @@ A counted allocation is destroyed when its last strong owner is destroyed. Relea
 
 #### Shared Values
 
-`Rc<T>` is a counted, immutable, single-runtime shared value. `Arc<T>` is its cross-task form and requires `T` to be shareable.
+`Rc<T>` is a counted, immutable value confined to one runtime thread. `Arc<T>` is its cross-task form and requires `T` to be shareable and safe to destroy on any runtime worker. A thread-affine resource cannot be placed in an `Arc` unless its host wrapper arranges safe deferred destruction.
 
 ```juan
 let config = Rc.new(load_config())
@@ -1179,7 +1284,7 @@ let value = config.max_players
 
 Field access, UFCS and operators operate through `Rc<T>` and `Arc<T>` as through a `View<T>`. Their contents may include resources; `@drop` runs when the last strong owner is destroyed.
 
-`Weak<T>` observes an `Rc<T>` without owning it; `ArcWeak<T>` observes an `Arc<T>`. `upgrade()` returns `Option<Rc<T>>` or `Option<Arc<T>>` and is `None` after the allocation is destroyed. `Weak<T>` is single-runtime; `ArcWeak<T>` is shareable.
+`Weak<T>` observes an `Rc<T>` without owning it; `ArcWeak<T>` observes an `Arc<T>`. `upgrade()` returns `Option<Rc<T>>` or `Option<Arc<T>>` and is `None` after the allocation is destroyed. `Weak<T>` is confined to its runtime thread; `ArcWeak<T>` follows its `Arc<T>` thread constraints.
 
 #### Reference Cycles
 
@@ -1324,7 +1429,7 @@ The compiler derives two structural properties for cross-thread values:
 * **Movable** — Unique ownership may transfer to another task. All owned fields must also be movable.
 * **Shareable** — Multiple tasks may read the value simultaneously. All reachable mutable state must be synchronized or inaccessible.
 
-Primitive immutable values, `Handle<T>`, owned `str`, named function values, union constructors and records/unions of shareable fields are shareable. `Arc<T>` and `ArcWeak<T>` are shareable when their element type is shareable. `Rc<T>`, `Weak<T>`, `Script` and arena values are not shareable. Buffers and resources are movable when their elements or host declarations permit transfer. Scoped reads and writes may cross worker threads only inside a structured region that joins before their source scope exits.
+Primitive immutable values, `Handle<T>`, owned `str`, named function values, union constructors and records/unions of shareable fields are shareable. `Arc<T>` and `ArcWeak<T>` are shareable when their element type is shareable. `Rc<T>`, `Weak<T>`, `Script` and arena-scoped values are neither movable nor shareable across tasks. Owned arenas may not transfer while derived values are live. Buffers and resources are movable when their elements or host declarations permit transfer. Scoped reads and writes may cross worker threads only inside a structured region that joins before their source scope exits.
 
 The standard synchronized types are `Atomic<T>`, `Mutex<T>`, `RwLock<T>` and `Channel<T>`. Mutable state shared by tasks must be inside one of these types. `Mutex.lock()` and `RwLock.write()` return scoped mutable lock views; `RwLock.read()` returns a scoped read lock view:
 
@@ -1333,7 +1438,7 @@ let mut state = game_state.lock()
 state.score += 1
 ```
 
-The guard releases on its last use or any earlier scope exit, including `return`, `?` and traps. A lock view cannot escape, remain live across `await`, spawn or blocking work, or overlap acquisition of another lock; Juan code may hold only one lock at a time. Atomic operations are sequentially consistent unless an explicitly named operation selects another ordering.
+The guard releases at its enclosing block's exit, including `return`, `?` and traps, or on explicit `drop(guard)`. Its last data access does not release the lock. A lock view cannot escape, remain live across `await`, spawn or blocking work, or overlap acquisition of another lock; Juan code may hold only one lock at a time. Atomic operations are sequentially consistent unless an explicitly named operation selects another ordering.
 
 Channels copy copyable values and transfer move-only values. Closing a channel wakes blocked receivers with `Option.None`; sending to a closed channel returns an error.
 
@@ -1378,7 +1483,7 @@ fn register(mut registrations: Registrations) {
 }
 ```
 
-Reload builds a new registration set transactionally. If registration fails, the old set stays active. On success, the host atomically installs the new set and revokes the old generation's registrations.
+Reload builds a new registration set transactionally. If registration fails, the old set stays active. On success, at a quiescent host boundary the runtime cancels and cleans up scripts owned by the old registration set, then atomically replaces the registrations. No old or new registration callback runs during that transition.
 
 Registration execution order is deterministic:
 
@@ -1429,7 +1534,7 @@ fn describe(arena: Arena, player: Player): str =>
     arena.format("{} hp={}", player.name, player.health)
 ```
 
-An arena string converts to an owned `str` only through `to_owned()`, which allocates on the heap.
+An arena string converts to an owned `str` only through `to_owned()`, which allocates on the heap. Growing an arena buffer allocates a new region in the same arena and relocates its elements; live element views or slices forbid that growth. Superseded regions remain reserved until reset.
 
 #### Element Rules
 
@@ -1451,7 +1556,8 @@ let files: Buffer<File> = Buffer.new_in(frame)                     // Error: res
 let mut level_memory = Arena.new(1mb)
 let tiles: Buffer<Tile> = Buffer.new_in(level_memory)
 
-level_memory.reset() // Error while `tiles` is live
+level_memory.reset() // Error: tiles is used below
+consume_tiles(tiles)
 ```
 
 `reset()`, `reserve()` and destruction require that no derived value is live.
@@ -1465,7 +1571,7 @@ The owned arena must be declared before its derived values so reverse destructio
 ```juan
 script.start(move fn() {
     let mut mission_memory = Arena.new(64kb)
-    let route = Buffer.new_in(mission_memory)
+    let route: Buffer<Vec3> = Buffer.new_in(mission_memory)
 
     wait(5s)
     follow(route.slice())
@@ -1490,7 +1596,7 @@ A script is a frame coroutine resumed by the runtime once per tick until it fini
 import std.script
 
 fn on_level_start() {
-    script.start(move fn() {
+    let _ = script.start(move fn() {
         play_cutscene("intro")
         wait_until(move fn() => cutscene.is_done())
 
@@ -1505,9 +1611,11 @@ fn on_level_start() {
 }
 ```
 
-`script.start(take body: @suspend fn()): Script` accepts an owned callable and allocates a pinned coroutine frame. It has the `alloc` effect. A non-suspending callable is also accepted and finishes on its first tick.
+The built-in `script.start` accepts either `take body: @suspend take fn()` or `take body: @suspend take fn(): Result<Unit, E>`. The selected return type is inferred from the body. Error values must be owned and support the standard diagnostic-formatting operation; generated adapters retain their type identity and diagnostic text for the host.
 
-`script.start_with(options, body)` additionally selects a phase and priority:
+Starting a script consumes its body and allocates pinned coroutine state, with the `alloc` effect. A non-suspending body is accepted and finishes on its first tick. `script.start_with` and `script.start_child` accept the same two body forms.
+
+`ScriptOptions` has fields `phase: UpdatePhase`, `priority: i32 = 0` and `cancel_with_parent: bool = false`. `script.start` inherits the caller's phase, or the host's default script phase outside a callback. `script.start_with(options, body)` selects a phase and priority explicitly:
 
 ```juan
 script.start_with(ScriptOptions {
@@ -1518,7 +1626,7 @@ script.start_with(ScriptOptions {
 })
 ```
 
-The body's final expression must be `Unit` or `Result<Unit, E>`. `return` completes the script, while `?` completes it with an error delivered to the host's script-error callback together with its identity and trace.
+The body's final expression must be `Unit` or `Result<Unit, E>`. `return` follows the body's selected return type; a bare return is valid only for `Unit`. `?` in a `Result` body propagates its error to the host's script-error callback together with script identity and trace.
 
 #### Suspension Points
 
@@ -1530,7 +1638,7 @@ These operations stop the current script slice and resume it on a later tick:
 * `wait_frames(count: u32)` — Resume after the specified number of ticks.
 * `wait_until(take condition: @no_suspend fn(): bool)` — Poll an owned non-suspending callable at the start of each tick.
 * `wait_for(child: Script)` — Resume after the child finishes or is cancelled.
-* `wait_any(scripts: Slice<Script>): Script` — Copy the handles into owned coroutine state and resume after any finishes. Creating the snapshot has the `alloc` effect.
+* `wait_any(scripts: Slice<Script>): Result<Script, WaitError>` — Copy the handles into owned coroutine state and resume after any finishes. Creating the snapshot has the `alloc` effect.
 
 `wait(0s)` and `wait_frames(0)` are equivalent to `yield_frame()`. A borrowed closure cannot be passed to `wait_until` because the stored callable outlives the current slice.
 
@@ -1545,7 +1653,7 @@ Function types publish whether their callable may suspend:
 
 A non-suspending callable may satisfy an `@suspend` function type. A suspending callable cannot satisfy a bare or `@no_suspend` function type. Function declarations infer the effect; the attributes are written when a function-type contract requires them.
 
-`@pure` is incompatible with `suspend`, while `@deterministic` and `@no_heap_alloc` may be compatible. `script.start` allocates the coroutine frame once. Afterward, `yield_frame`, `wait`, `wait_frames` and `wait_for` update existing state without allocating. `wait_until` and `wait_any` allocate owned state and violate `@no_heap_alloc`.
+`@pure` is incompatible with `suspend`, while `@deterministic` and `@no_heap_alloc` may be compatible. `script.start` allocates the coroutine frame once. Afterward, `yield_frame`, `wait`, `wait_frames` and `wait_for` update existing state without allocating. Suspending helper calls must also have preallocated state to satisfy `@no_heap_alloc`; unbounded recursive suspension cannot claim that guarantee. `wait_until` and `wait_any` allocate owned state and violate `@no_heap_alloc`.
 
 ```juan
 @no_heap_alloc
@@ -1561,31 +1669,40 @@ Suspension points are forbidden inside `par for`, `parallel`, `spawn`, a `wait_u
 
 #### Values Across Suspension
 
-Scoped borrows, values belonging to `frame` or a borrowed arena, and ephemeral index places may not remain live across suspension. Owned values, copyable values, counted values, handles, script-owned arenas and values derived from those arenas may remain live.
+Scoped views into pools, cells, locks or externally owned state, values belonging to `frame` or a borrowed arena, and ephemeral index places may not remain live across suspension. Owned values, counted values, handles, script-owned arenas and values derived from those arenas may remain live.
+
+A suspending helper may retain read or exclusive parameter access across suspension only when the actual source is a local owned by the same pinned script call chain and no other script, task or host alias can access it. The compiler publishes which parameters survive suspension and checks the requirement at every call. This permits `countdown(mut timer)` on a script-local timer but rejects passing a pool entry or cell view. Every outstanding structured task must be joined first. The exclusive access lasts until the helper returns.
 
 ```juan
-let mut enemy = enemies.get_mut(handle)?
-enemy.alert()
-wait(1s) // Error: `enemy` remains live across suspension
-enemy.attack()
+if let Some(mut enemy) = enemies.get_mut(handle) {
+    enemy.alert()
+    wait(1s) // Error: the pool entry remains borrowed
+    enemy.attack()
+}
 ```
 
 The value must instead be reacquired:
 
 ```juan
-enemies.get_mut(handle)?.alert()
+if let Some(mut enemy) = enemies.get_mut(handle) {
+    enemy.alert()
+}
 wait(1s)
-enemies.get_mut(handle)?.attack()
+if let Some(mut enemy) = enemies.get_mut(handle) {
+    enemy.attack()
+}
 ```
 
 #### Scheduler
 
-The host calls `tick(phase, dt)` with a `Duration` delta for each registered phase. Ready scripts run in this deterministic order:
+The host calls `tick(phase, dt)` with a `Duration` delta for each registered phase. Waiting conditions are checked once before resuming ready scripts, using the same phase/priority/start ordering. A satisfied wait becomes ready for that tick. `wait_any` snapshots and releases its input slice before suspension, rejects an empty list with an error, and breaks simultaneous-completion ties by input order. Waiting on oneself traps. Completion waits return no earlier than the next tick.
+
+Ready scripts run in this deterministic order:
 
 1. Lower numeric priority first.
 2. Earlier start order first.
 
-Each script runs until suspension, completion, trap or cancellation. Sequential script portions never run simultaneously with one another. A script may use `task`, `spawn`, `par for` and `parallel`; that parallel work joins before the script continues. Scripts started during a tick first run on the next tick of their phase.
+Each script runs until suspension, completion, trap, budget exhaustion or cancellation. Sequential script portions never run simultaneously with one another. A script may use `task`, `spawn`, `par for` and `parallel`; that parallel work joins before the script continues. Scripts started during a tick first run on the next tick of their phase.
 
 #### Handles, Completion & Cancellation
 
@@ -1593,17 +1710,23 @@ Each script runs until suspension, completion, trap or cancellation. Sequential 
 
 On completion or cancellation, the coroutine frame and its locals are destroyed immediately. The completion record retains its state and error while any handle exists; the last handle frees it.
 
+`Script` operations are host-thread-only. Dropping all external handles does not cancel a running script because the scheduler owns it. Scripts started by a registered callback inherit its registration owner; other starts belong to the runtime and are cancelled at shutdown.
+
 Script handles provide:
 
 * `is_running(): bool`
 * `finished(): bool`
 * `cancel()` — Request cancellation and destroy live locals in reverse order. A script not yet started never runs its body.
 
-Cancellation is observable inside the script only through destructors. Scripts are unstructured concurrency bounded by ticks and registration lifetime rather than lexical scope.
+Cancellation is cooperative and observed at compiler-inserted checkpoints before loop backedges, function entries and suspension. The executing script unwinds only after returning from a host call; another thread never destroys its active frame. A suspended script can be cancelled without running its body again. Cancellation is observable inside the body only through destructors.
+
+The host may configure a per-slice execution budget. Both VM and AOT code check the same logical work counter at checkpoints. Exhaustion traps the script and runs cleanup; it does not silently yield while forbidden borrows are live. Cleanup has a separate host-configured budget; exhaustion of that emergency budget aborts the runtime, so deterministic cleanup applies only to normal unwinding. Host calls must honor their own time limits because Juan cannot preempt arbitrary native code.
+
+Scripts are unstructured concurrency bounded by ticks and registration lifetime rather than lexical scope.
 
 #### Child Scripts
 
-`script.start_child(take body: @suspend fn()): Script` links a child to the current script. Cancelling the parent cancels the child, and the parent may call `wait_for` on it. A parent that completes normally leaves children running unless `cancel_with_parent` is enabled in its options.
+`script.start_child(body): Script` links a child to the current script. Cancelling the parent cancels the child, and the parent may call `wait_for` on it. A parent that completes normally leaves a child running unless that child's `cancel_with_parent` option is true. `script.start_child_with(options, body)` supplies child options; parent cancellation always propagates.
 
 #### Errors & Traps
 
@@ -1645,7 +1768,7 @@ Identifiers use ASCII letters, numbers and `_`. They must start with a letter or
 
 Integer literals may be decimal, binary (`0b`), octal (`0o`) or hexadecimal (`0x`). Their optional suffix is one of `i8`, `i16`, `i32`, `i64`, `i128`, `isize`, `u8`, `u16`, `u32`, `u64`, `u128` or `usize`; an unconstrained unsuffixed integer defaults to `i32`. Floating-point literals use a decimal fraction, an exponent or an `f32`/`f64` suffix; an unconstrained unsuffixed float defaults to `f64`. Underscores may separate digits but may not begin or end a digit sequence. A leading `-` is the unary operator, not part of a literal.
 
-The built-in unit suffixes `b`, `kb`, `mb`, `gb`, `ns`, `us`, `ms`, `s`, `min` and `h` may follow a decimal integer or floating-point body without whitespace. A literal has either a numeric type suffix or a unit suffix, never both. The lexer uses the longest matching suffix. An underscore may separate digits but may not separate the numeric body from its suffix, so `1_024kb` is valid and `1_kb` is not. Section 7.10 defines unit scaling and exactness.
+The built-in unit suffixes `b`, `kb`, `mb`, `gb`, `ns`, `us`, `ms`, `s`, `min` and `h` may follow a decimal integer or floating-point body without whitespace. A literal has either a numeric type suffix or a unit suffix, never both. The lexer consumes the entire adjacent suffix identifier and requires an exact built-in suffix match; unknown suffixes are errors. `0b` followed immediately by `0` or `1` starts a binary literal. Standalone `0b` is zero bytes; invalid binary digits are diagnosed rather than split into adjacent literals. Use `0b0` for binary zero. An underscore may separate digits but may not separate the numeric body from its suffix, so `1_024kb` is valid and `1_kb` is not. Section 7.10 defines unit scaling and exactness.
 
 A decimal point belongs to a numeric literal only when immediately followed by a decimal digit. This keeps literal UFCS calls and ranges unambiguous:
 
@@ -1676,3 +1799,54 @@ Lex
   -> Lower to Juan IR
   -> Emit VM bytecode or a host-linked native object
 ```
+
+
+## 17. Standard Libraries & Host Metadata
+
+Library APIs use ordinary types, free functions and the existing derive mechanism. Engine operations are provided by host bindings.
+
+### 17.1 Binary Data & Bit Operations
+
+`std.binary` provides checked reads and writes over `Slice<u8>` and `SliceMut<u8>`. Integer and floating-point operations name their byte order explicitly:
+
+```juan
+let speed = packet.read_f32_le(3)?
+let identifier = packet.read_u32_be(7)?
+```
+
+Offsets are `usize` byte indices. These operations copy values and permit unaligned offsets; insufficient bytes return `Result.Err`. They never construct a typed reference into the input. Boolean, enum and text decoders additionally validate their encodings. Reading arbitrary record memory or padding is not serialization.
+
+`std.bits` supplies `extract(value, offset, width)`, `replace(value, field, offset, width)`, rotations and bit counts for fixed-width unsigned integers. Bit zero is the least significant bit. Invalid ranges and replacement values that do not fit return errors. Full-width operations avoid shifting by the operand width. Juan has no native record bitfield syntax.
+
+`BitReader` and `BitWriter` select `BitOrder.LsbFirst` or `BitOrder.MsbFirst` at construction. `read_bits(count)` and `write_bits(value, count)` advance an explicit cursor, support widths from 1 through 64, and report bounds and range errors. Stream bit order and multibyte endianness are separate settings.
+
+### 17.2 Vector Swizzles
+
+The math library provides read-only UFCS swizzles for two-, three- and four-component vectors:
+
+```juan
+let horizontal = position.xz()
+let reversed = color.bgr()
+```
+
+Components use either `xyzw` or `rgba` consistently within one swizzle. Selecting a missing component is a compile error. Repetition is allowed, and the result is an independent vector value. Swizzles do not produce writable places. Ordinary field assignment remains available for individual components.
+
+### 17.3 Serialization
+
+`@derive(serialization)` emits typed fieldwise encode/decode operations for selected format libraries. Formats define byte order, string encoding, length representation and validation limits. The derive rejects unsupported fields and never serializes record padding, raw addresses or runtime code.
+
+Decoding returns `Result` with field/path information and rejects invalid tags, lengths and primitive encodings. Readers impose configurable depth and allocation limits. Durable formats identify schemas and fields explicitly; defaults, unknown-field behavior and migrations are declared in serializer metadata rather than inferred from source field order.
+
+Handles require an explicit stable external-identity mapping. Closures, scoped views, locks and script execution frames have no automatic serialization. Save files serialize persistent game state and explicit script checkpoints, not suspended native stacks.
+
+### 17.4 Events & Subscriptions
+
+Hosts expose typed `Event<T>` sources. `subscribe` takes an owned repeatedly callable callback and returns a move-only `Subscription`; dropping it unregisters the callback. Consuming callables are rejected. Mutable callbacks are invoked exclusively, and reentrant emissions are queued instead of recursively entering the same mutable environment.
+
+Main-thread event delivery follows registration phase/priority/identity ordering. Payload ownership and queue capacity are part of each binding's contract. Queue overflow is reported through its declared error policy.
+
+`wait_event(event)` has the `suspend` effect, installs a one-shot subscription and waits until an owned payload can be delivered on a later tick. Cancellation removes the subscription. Event waits may allocate and do not require polling a user closure.
+
+### 17.5 Editor Metadata
+
+Generated bindings expose opt-in record/field metadata for inspector labels, ranges, defaults, asset kinds and serializer identities. Imported attribute macros express that metadata using Section 13. Metadata does not bypass visibility, ownership or validation. Editors modify live values through validated host accessors, with incompatible type changes following the ordinary reload rules.
