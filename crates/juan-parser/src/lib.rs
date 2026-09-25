@@ -51,7 +51,7 @@ impl<'a> Parser<'a> {
                         self.current_token.kind.clone(),
                     ));
                 }
-            }?
+            }?;
         }
 
         Ok(())
@@ -109,37 +109,30 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn parse_expression(&mut self) -> Result<(), ParserError> {
-        let left = self.parse_primary()?;
+    fn parse_expression(&mut self) -> Result<NodeId, ParserError> {
+        let mut left = self.parse_primary()?;
 
-        let mut op = Op::Add;
-        match self.current_token.kind {
-            TokenKind::Plus => {
-                op = Op::Add;
-                self.advance();
-            }
+        while let Some(op) = match self.current_token.kind {
+            TokenKind::Plus => Some(Op::Add),
+            TokenKind::Minus => Some(Op::Sub),
+            _ => None,
+        } {
+            self.advance();
 
-            _ => (),
+            let right = self.parse_primary()?;
+
+            let (left_start, _) = self.tree[left].span.unpack();
+            let (right_start, len) = self.tree[right].span.unpack::<usize>();
+
+            left = self.tree.alloc(Node {
+                expr: Expr::BinaryOp { op, left, right },
+                span: Span::new(left_start, right_start + len),
+            });
         }
-
-        let right = self.parse_primary()?;
-
-        let binary_op = Expr::BinaryOp { op, left, right };
-
-        let (left_start, _) = self.tree[left].span.unpack();
-        let (right_start, len) = self.tree[right].span.unpack::<usize>();
-
-        let node = Node {
-            expr: binary_op,
-            span: Span::new(left_start, right_start + len),
-        };
-
-        self.tree.alloc(node);
-        self.advance();
 
         println!("{:?}", self.tree);
 
-        Ok(())
+        Ok(left)
     }
 
     fn parse_primary(&mut self) -> Result<NodeId, ParserError> {

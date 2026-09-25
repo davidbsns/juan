@@ -1,5 +1,7 @@
 use std::array::TryFromSliceError;
 
+use juan_bytecode::Opcode;
+use num_enum::TryFromPrimitiveError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -24,4 +26,7 @@ pub enum VMError {
 
     #[error("Try from slice error: {0}")]
     TryFromSlice(#[from] TryFromSliceError),
+
+    #[error("Try from primitive opcode error: {0}")]
+    TryFromPrimitiveOpcode(#[from] TryFromPrimitiveError<Opcode>),
 }

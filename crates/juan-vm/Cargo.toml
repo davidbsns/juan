@@ -10,4 +10,5 @@ rust-version.workspace = true
 
 [dependencies]
 thiserror.workspace = true
+num_enum.workspace = true
 juan-bytecode.workspace = true

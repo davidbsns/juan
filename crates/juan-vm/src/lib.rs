@@ -41,8 +41,8 @@ impl VM {
             let byte = bytes[ptr];
             ptr += 1;
 
-            match byte {
-                b if b == Opcode::PushInt as u8 => {
+            match Opcode::try_from(byte) {
+                Ok(Opcode::PushInt) => {
                     let Some(numbers) = bytes.get(ptr..ptr + 4) else {
                         return Err(VMError::UnexpectedEndOfBytecode(ptr));
                     };
@@ -54,7 +54,7 @@ impl VM {
                     ptr += 4;
                 }
 
-                b if b == Opcode::Add as u8 => {
+                Ok(Opcode::Add) => {
                     let Some(rhs) = stack.pop() else {
                         return Err(VMError::StackUnderflow);
                     };
@@ -68,14 +68,26 @@ impl VM {
                     }
                 }
 
-                b if b == Opcode::Halt as u8 => {
+                Ok(Opcode::Sub) => {
+                    let Some(rhs) = stack.pop() else {
+                        return Err(VMError::StackUnderflow);
+                    };
+                    let Some(lhs) = stack.pop() else {
+                        return Err(VMError::StackUnderflow);
+                    };
+
+                    match lhs.checked_sub(rhs) {
+                        Some(a) => stack.push(a),
+                        None => return Err(VMError::IntegerOverflow(lhs, rhs, '-')),
+                    }
+                }
+
+                Ok(Opcode::Halt) => {
                     println!("{:?}", stack);
                     return Ok(());
                 }
 
-                _ => {
-                    return Err(VMError::InvalidOpcode(byte));
-                }
+                Err(e) => return Err(VMError::TryFromPrimitiveOpcode(e)),
             }
         }
 

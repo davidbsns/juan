@@ -41,6 +41,7 @@ impl Compiler {
                 Expr::BinaryOp { op, .. } => {
                     let opcode = match op {
                         Op::Add => Opcode::Add,
+                        Op::Sub => Opcode::Sub,
                     };
 
                     chunk.write_opcode(opcode);
