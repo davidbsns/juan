@@ -54,8 +54,15 @@ pub struct ModuleDecl {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct FunctionDecl {
+    pub name: Span,
+    pub span: Span,
+    pub body: NodeId,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct ParsedModule {
     pub tree: SyntaxTree,
-    pub expr_roots: Vec<NodeId>,
     pub decl: ModuleDecl,
+    pub functions: Vec<FunctionDecl>,
 }

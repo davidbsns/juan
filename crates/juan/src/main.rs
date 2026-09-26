@@ -22,7 +22,7 @@ fn main() -> Result<(), JuanError> {
     compiler.read_module(&module, input);
     compiler.emit()?;
 
-    let math = String::from("math");
+    let math = String::from("math.calculate");
     let chunk = compiler.get_chunk(math.clone()).unwrap();
 
     vm.load(math.clone(), chunk.clone())?;

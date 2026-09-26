@@ -71,22 +71,27 @@ impl Compiler {
 
     pub fn read_module(&mut self, module: &ParsedModule, src: String) {
         // TODO: only create chunks inside blocks/functions
-
-        let mut chunk = Chunk::new();
-
-        for id in module.expr_roots.iter() {
-            self.compile_expr(*id, &module.tree, &mut chunk);
-        }
-
-        chunk.write_opcode(Opcode::Halt);
-
-        println!("{:?}", chunk);
+        //
 
         let (module_start, module_len) = module.decl.path_span.unpack();
         let module_name = &src[module_start..module_start + module_len];
 
-        // TODO: append a generation if it already exists
-        self.chunks.insert(module_name.to_owned(), chunk);
+        for func in module.functions.iter() {
+            let (func_start, func_len) = func.name.unpack();
+            let func_name = &src[func_start..func_start + func_len];
+
+            let mut chunk = Chunk::new();
+
+            self.compile_expr(func.body, &module.tree, &mut chunk);
+            chunk.write_opcode(Opcode::Halt);
+
+            println!("{:?}", chunk);
+
+            self.chunks.insert(
+                format!("{}.{}", module_name.to_owned(), func_name.to_owned()),
+                chunk,
+            );
+        }
     }
 
     pub fn emit(&self) -> Result<(), CompilerError> {

@@ -1,6 +1,5 @@
 module math
 
-{
-    2 + 3
-    4 * 5
+fn calculate() {
+    1 * 5
 }

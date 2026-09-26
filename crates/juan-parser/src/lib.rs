@@ -1,4 +1,6 @@
-use juan_ast::{Expr, Literal, ModuleDecl, Node, NodeId, Op, ParsedModule, SyntaxTree, UnaryOp};
+use juan_ast::{
+    Expr, FunctionDecl, Literal, ModuleDecl, Node, NodeId, Op, ParsedModule, SyntaxTree, UnaryOp,
+};
 use juan_lexer::{
     Lexer,
     tokens::{Token, TokenKind},
@@ -13,7 +15,6 @@ pub struct Parser<'a> {
     lexer: &'a mut Lexer<'a>,
     current_token: Token,
     tree: SyntaxTree,
-    expr_roots: Vec<NodeId>,
     paren_depth: u32,
 }
 
@@ -25,7 +26,6 @@ impl<'a> Parser<'a> {
             lexer,
             current_token,
             tree: SyntaxTree::new(),
-            expr_roots: Vec::new(),
             paren_depth: 0,
         }
     }
@@ -43,9 +43,11 @@ impl<'a> Parser<'a> {
             ));
         }
 
+        let mut functions = vec![];
+
         loop {
             match self.current_token.kind {
-                TokenKind::Int | TokenKind::LParen | TokenKind::Minus | TokenKind::LBrace => {
+                /*TokenKind::Int | TokenKind::LParen | TokenKind::Minus | TokenKind::LBrace => {
                     let id = self.parse_term()?;
 
                     if self.current_token.kind == TokenKind::Newline {
@@ -58,6 +60,12 @@ impl<'a> Parser<'a> {
                     }
 
                     self.expr_roots.push(id);
+                    Ok(())
+                }*/
+                TokenKind::Fn => {
+                    let decl = self.parse_function()?;
+                    functions.push(decl);
+
                     Ok(())
                 }
 
@@ -79,7 +87,7 @@ impl<'a> Parser<'a> {
         Ok(ParsedModule {
             decl,
             tree: self.tree,
-            expr_roots: self.expr_roots,
+            functions,
         })
     }
 
@@ -138,6 +146,26 @@ impl<'a> Parser<'a> {
             expr: Expr::BinaryOp { op, left, right },
             span: Span::new(left_start, right_start + len),
         })
+    }
+
+    fn parse_function(&mut self) -> Result<FunctionDecl, ParserError> {
+        let start_token = self.expect(TokenKind::Fn)?;
+
+        let ident_token = self.expect(TokenKind::Identifier)?;
+        let (ident_start, ident_len) = ident_token.span.unpack();
+
+        let name = Span::new(ident_start, ident_start + ident_len);
+
+        self.expect(TokenKind::LParen)?;
+        self.expect(TokenKind::RParen)?;
+
+        let body = self.parse_block()?;
+        let (block_start, block_len) = self.tree[body].span.unpack::<usize>();
+
+        let (start, _) = start_token.span.unpack();
+        let span = Span::new(start, block_start + block_len);
+
+        Ok(FunctionDecl { name, span, body })
     }
 
     fn parse_block(&mut self) -> Result<NodeId, ParserError> {
