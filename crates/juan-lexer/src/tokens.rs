@@ -37,6 +37,8 @@ pub enum TokenKind {
     Slash,
     Percent,
 
+    Newline,
+
     Eof,
 }
 

@@ -39,6 +39,17 @@ impl<'a> Lexer<'a> {
             b'*' => self.advance(TokenKind::Star),
             b'/' => self.advance(TokenKind::Slash),
             b'%' => self.advance(TokenKind::Percent),
+            b'\n' => self.advance(TokenKind::Newline),
+            b'\r' => {
+                let start = self.cursor;
+                self.cursor += 1;
+
+                if self.src.get(self.cursor) == Some(&b'\n') {
+                    self.cursor += 1;
+                }
+
+                Token::new(TokenKind::Newline, Span::new(start, self.cursor))
+            }
 
             b'0'..=b'9' => self.read_num(),
             b'"' => self.read_string(),
@@ -55,7 +66,7 @@ impl<'a> Lexer<'a> {
 
     fn skip_whitespace(&mut self) {
         while let Some(byte) = self.src.get(self.cursor) {
-            if byte.is_ascii_whitespace() {
+            if byte.is_ascii_whitespace() && !matches!(byte, b'\n' | b'\r') {
                 self.cursor += 1;
             } else {
                 break;

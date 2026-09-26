@@ -14,6 +14,7 @@ pub struct Parser<'a> {
     current_token: Token,
     tree: SyntaxTree,
     expr_roots: Vec<NodeId>,
+    paren_depth: u32,
 }
 
 impl<'a> Parser<'a> {
@@ -25,18 +26,44 @@ impl<'a> Parser<'a> {
             current_token,
             tree: SyntaxTree::new(),
             expr_roots: Vec::new(),
+            paren_depth: 0,
         }
     }
 
     pub fn parse(mut self) -> Result<ParsedModule, ParserError> {
         let decl = self.parse_module()?;
 
+        // TODO: make .expect handle clean ergonomics with slices
+        if matches!(self.current_token.kind, TokenKind::Newline | TokenKind::Eof) {
+            self.advance();
+        } else {
+            return Err(ParserError::ExpectedOneOf(
+                self.current_token.kind,
+                vec![TokenKind::Newline, TokenKind::Eof],
+            ));
+        }
+
         loop {
             match self.current_token.kind {
                 TokenKind::Int | TokenKind::LParen | TokenKind::Minus => {
                     let id = self.parse_term()?;
+
+                    if self.current_token.kind == TokenKind::Newline {
+                        self.advance();
+                    } else if self.current_token.kind != TokenKind::Eof {
+                        return Err(ParserError::ExpectedOneOf(
+                            self.current_token.kind,
+                            vec![TokenKind::Newline, TokenKind::Eof],
+                        ));
+                    }
+
                     self.expr_roots.push(id);
                     Ok(())
+                }
+
+                TokenKind::Newline => {
+                    self.advance();
+                    continue;
                 }
 
                 TokenKind::Eof => break,
@@ -69,6 +96,16 @@ impl<'a> Parser<'a> {
         self.advance();
 
         Ok(token)
+    }
+
+    fn skip_newlines(&mut self) {
+        loop {
+            if self.current_token.kind == TokenKind::Newline {
+                self.advance();
+            } else {
+                break;
+            }
+        }
     }
 
     fn parse_module(&mut self) -> Result<ModuleDecl, ParserError> {
@@ -106,13 +143,20 @@ impl<'a> Parser<'a> {
     fn parse_factor(&mut self) -> Result<NodeId, ParserError> {
         let mut left = self.parse_unary()?;
 
-        while let Some(op) = match self.current_token.kind {
-            TokenKind::Star => Some(Op::Mul),
-            TokenKind::Slash => Some(Op::Div),
-            TokenKind::Percent => Some(Op::Rem),
-            _ => None,
-        } {
+        loop {
+            if self.paren_depth > 0 {
+                self.skip_newlines();
+            }
+
+            let op = match self.current_token.kind {
+                TokenKind::Star => Op::Mul,
+                TokenKind::Slash => Op::Div,
+                TokenKind::Percent => Op::Rem,
+                _ => break,
+            };
+
             self.advance();
+            self.skip_newlines();
 
             let right = self.parse_unary()?;
             left = self.allocate(left, right, op);
@@ -126,12 +170,19 @@ impl<'a> Parser<'a> {
     fn parse_term(&mut self) -> Result<NodeId, ParserError> {
         let mut left = self.parse_factor()?;
 
-        while let Some(op) = match self.current_token.kind {
-            TokenKind::Plus => Some(Op::Add),
-            TokenKind::Minus => Some(Op::Sub),
-            _ => None,
-        } {
+        loop {
+            if self.paren_depth > 0 {
+                self.skip_newlines();
+            }
+
+            let op = match self.current_token.kind {
+                TokenKind::Plus => Op::Add,
+                TokenKind::Minus => Op::Sub,
+                _ => break,
+            };
+
             self.advance();
+            self.skip_newlines();
 
             let right = self.parse_factor()?;
             left = self.allocate(left, right, op);
@@ -147,6 +198,7 @@ impl<'a> Parser<'a> {
             let (start, _) = self.current_token.span.unpack();
 
             self.advance();
+            self.skip_newlines();
 
             let operand = self.parse_unary()?;
             let (op_start, op_len) = self.tree[operand].span.unpack::<usize>();
@@ -186,10 +238,14 @@ impl<'a> Parser<'a> {
             }
 
             TokenKind::LParen => {
+                self.paren_depth += 1;
+
                 self.advance();
+                self.skip_newlines();
 
                 let idx = self.parse_term()?;
 
+                self.paren_depth -= 1;
                 self.expect(TokenKind::RParen)?;
 
                 Ok(idx)
