@@ -20,6 +20,7 @@ pub enum TokenKind {
     Import,
 
     Dot,
+    Comma,
     LParen,
     RParen,
     LBrace,

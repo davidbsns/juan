@@ -83,7 +83,7 @@ impl Compiler {
             Expr::Identifier => todo!("Yeah"),
 
             // TODO: this currently only works for same-module calls
-            Expr::Call { callee } => {
+            Expr::Call { callee, .. } => {
                 let node = &tree[callee];
                 let (func_start, func_len) = node.span.unpack();
 

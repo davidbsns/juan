@@ -30,6 +30,7 @@ impl<'a> Lexer<'a> {
         // Single character here, read_identifier manages the rest
         match current_byte {
             b'.' => self.advance(TokenKind::Dot),
+            b',' => self.advance(TokenKind::Comma),
             b'(' => self.advance(TokenKind::LParen),
             b')' => self.advance(TokenKind::RParen),
             b'{' => self.advance(TokenKind::LBrace),

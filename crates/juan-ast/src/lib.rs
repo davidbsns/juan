@@ -40,6 +40,7 @@ pub enum Expr {
     },
     Call {
         callee: NodeId,
+        args: Vec<NodeId>,
     },
 }
 
@@ -63,11 +64,19 @@ pub struct ModuleDecl {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ParamDecl {
+    pub name: Span,
+    pub span: Span,
+    pub ty: TypeRef,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct FunctionDecl {
     pub name: Span,
     pub span: Span,
     pub body: NodeId,
     pub return_type: Option<TypeRef>,
+    pub params: Vec<ParamDecl>,
 }
 
 #[derive(Debug, PartialEq, Eq)]

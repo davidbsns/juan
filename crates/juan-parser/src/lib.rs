@@ -1,6 +1,6 @@
 use juan_ast::{
-    Expr, FunctionDecl, Literal, ModuleDecl, Node, NodeId, Op, ParsedModule, SyntaxTree, TypeRef,
-    UnaryOp,
+    Expr, FunctionDecl, Literal, ModuleDecl, Node, NodeId, Op, ParamDecl, ParsedModule, SyntaxTree,
+    TypeRef, UnaryOp,
 };
 use juan_lexer::{
     Lexer,
@@ -157,7 +157,43 @@ impl<'a> Parser<'a> {
 
         let name = Span::new(ident_start, ident_start + ident_len);
 
+        self.paren_depth += 1;
         self.expect(TokenKind::LParen)?;
+        self.skip_newlines();
+
+        let mut params = vec![];
+        while self.current_token.kind == TokenKind::Identifier {
+            let param_token = self.expect(TokenKind::Identifier)?;
+            self.skip_newlines();
+
+            let (start, _) = param_token.span.unpack();
+
+            self.expect(TokenKind::Colon)?;
+            self.skip_newlines();
+
+            let type_token = self.expect(TokenKind::Identifier)?;
+            self.skip_newlines();
+
+            let (type_start, type_len) = type_token.span.unpack::<usize>();
+
+            let param = ParamDecl {
+                name: param_token.span.clone(),
+                span: Span::new(start, type_start + type_len),
+                ty: TypeRef {
+                    name: type_token.span.clone(),
+                },
+            };
+
+            params.push(param);
+
+            if self.current_token.kind != TokenKind::RParen {
+                self.skip_newlines();
+                self.expect(TokenKind::Comma)?;
+                self.skip_newlines();
+            }
+        }
+
+        self.paren_depth -= 1;
         self.expect(TokenKind::RParen)?;
 
         let mut return_type = None;
@@ -182,6 +218,7 @@ impl<'a> Parser<'a> {
             span,
             body,
             return_type,
+            params,
         })
     }
 
@@ -326,7 +363,19 @@ impl<'a> Parser<'a> {
             self.expect(TokenKind::LParen)?;
             self.skip_newlines();
 
-            // TODO: handle args
+            let mut args = vec![];
+            while self.current_token.kind != TokenKind::RParen {
+                let arg = self.parse_term()?;
+                args.push(arg);
+
+                self.skip_newlines();
+                if self.current_token.kind != TokenKind::RParen {
+                    self.expect(TokenKind::Comma)?;
+                }
+                self.skip_newlines();
+            }
+
+            self.skip_newlines();
 
             self.paren_depth -= 1;
             let (r_start, r_len) = self.expect(TokenKind::RParen)?.span.unpack::<usize>();
@@ -336,6 +385,7 @@ impl<'a> Parser<'a> {
             current_expr = self.tree.alloc(Node {
                 expr: Expr::Call {
                     callee: current_expr,
+                    args,
                 },
                 span: Span::new(callee_start, r_start + r_len),
             })
