@@ -45,7 +45,7 @@ impl<'a> Parser<'a> {
 
         loop {
             match self.current_token.kind {
-                TokenKind::Int | TokenKind::LParen | TokenKind::Minus => {
+                TokenKind::Int | TokenKind::LParen | TokenKind::Minus | TokenKind::LBrace => {
                     let id = self.parse_term()?;
 
                     if self.current_token.kind == TokenKind::Newline {
@@ -138,6 +138,58 @@ impl<'a> Parser<'a> {
             expr: Expr::BinaryOp { op, left, right },
             span: Span::new(left_start, right_start + len),
         })
+    }
+
+    fn parse_block(&mut self) -> Result<NodeId, ParserError> {
+        let old_depth = self.paren_depth;
+        self.paren_depth = 0;
+
+        let token = self.expect(TokenKind::LBrace)?;
+        let (start, _) = token.span.unpack();
+
+        self.skip_newlines();
+
+        let mut statements = vec![];
+
+        loop {
+            self.skip_newlines();
+
+            if self.current_token.kind == TokenKind::RBrace {
+                break;
+            }
+
+            if self.current_token.kind == TokenKind::Eof {
+                return Err(ParserError::TokenMismatch(
+                    self.current_token.kind,
+                    TokenKind::RBrace,
+                ));
+            }
+
+            let node = self.parse_term()?;
+            statements.push(node);
+
+            if !matches!(
+                self.current_token.kind,
+                TokenKind::Newline | TokenKind::RBrace
+            ) {
+                return Err(ParserError::ExpectedOneOf(
+                    self.current_token.kind,
+                    vec![TokenKind::RBrace, TokenKind::Newline],
+                ));
+            }
+        }
+
+        let brace = self.expect(TokenKind::RBrace)?;
+        let (b_start, b_len) = brace.span.unpack::<usize>();
+
+        let tail = statements.pop();
+
+        self.paren_depth = old_depth;
+
+        Ok(self.tree.alloc(Node {
+            expr: Expr::Block { statements, tail },
+            span: Span::new(start, b_start + b_len),
+        }))
     }
 
     fn parse_factor(&mut self) -> Result<NodeId, ParserError> {
@@ -247,6 +299,12 @@ impl<'a> Parser<'a> {
 
                 self.paren_depth -= 1;
                 self.expect(TokenKind::RParen)?;
+
+                Ok(idx)
+            }
+
+            TokenKind::LBrace => {
+                let idx = self.parse_block()?;
 
                 Ok(idx)
             }

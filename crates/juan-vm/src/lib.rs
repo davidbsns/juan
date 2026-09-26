@@ -2,13 +2,17 @@ use std::collections::HashMap;
 
 use juan_bytecode::{Chunk, Opcode};
 
-use crate::error::VMError;
+use crate::{
+    error::VMError,
+    value::{Value, ValueType},
+};
 
 pub struct VM {
     chunks: HashMap<String, Chunk>,
 }
 
 pub mod error;
+mod value;
 
 impl VM {
     pub fn new() -> Self {
@@ -32,7 +36,7 @@ impl VM {
             return Err(VMError::ChunkDoesntExist(name));
         };
 
-        let mut stack: Vec<i32> = Vec::new();
+        let mut stack: Vec<Value> = Vec::new();
         let mut ptr: usize = 0;
 
         let bytes = chunk.bytes();
@@ -50,8 +54,17 @@ impl VM {
                     let numbers: &[u8; 4] = numbers.try_into()?;
                     let num = i32::from_le_bytes(*numbers);
 
-                    stack.push(num);
+                    stack.push(Value::I32(num));
                     ptr += 4;
+                }
+
+                Ok(Opcode::Pop) => match stack.pop() {
+                    Some(_) => {}
+                    None => return Err(VMError::StackUnderflow),
+                },
+
+                Ok(Opcode::PushUnit) => {
+                    stack.push(Value::Unit);
                 }
 
                 Ok(Opcode::Neg) => {
@@ -59,9 +72,18 @@ impl VM {
                         return Err(VMError::StackUnderflow);
                     };
 
-                    match operand.checked_neg() {
-                        Some(a) => stack.push(a),
-                        None => return Err(VMError::UnaryIntegerOverflow(operand, '-')),
+                    match operand {
+                        Value::I32(i) => match i.checked_neg() {
+                            Some(a) => stack.push(Value::I32(a)),
+                            None => return Err(VMError::UnaryIntegerOverflow(i, '-')),
+                        },
+
+                        invalid => {
+                            return Err(VMError::InvalidOperandType(
+                                invalid.kind(),
+                                ValueType::I32,
+                            ));
+                        }
                     }
                 }
 
@@ -71,6 +93,28 @@ impl VM {
                     };
                     let Some(lhs) = stack.pop() else {
                         return Err(VMError::StackUnderflow);
+                    };
+
+                    let rhs = match rhs {
+                        Value::I32(i) => i,
+
+                        invalid => {
+                            return Err(VMError::InvalidOperandType(
+                                invalid.kind(),
+                                ValueType::I32,
+                            ));
+                        }
+                    };
+
+                    let lhs = match lhs {
+                        Value::I32(i) => i,
+
+                        invalid => {
+                            return Err(VMError::InvalidOperandType(
+                                invalid.kind(),
+                                ValueType::I32,
+                            ));
+                        }
                     };
 
                     let (op_char, res) = match op {
@@ -95,7 +139,7 @@ impl VM {
                     };
 
                     match res {
-                        Some(a) => stack.push(a),
+                        Some(a) => stack.push(Value::I32(a)),
                         None => return Err(VMError::IntegerOverflow(lhs, rhs, op_char)),
                     }
                 }

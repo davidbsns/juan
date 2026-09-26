@@ -13,7 +13,7 @@
 use juan_span::Span;
 use phf::phf_map;
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TokenKind {
     Fn,
     Module,

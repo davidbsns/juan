@@ -5,12 +5,14 @@ use num_enum::TryFromPrimitive;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, TryFromPrimitive)]
 pub enum Opcode {
     PushInt,
+    PushUnit,
     Add,
     Sub,
     Mul,
     Div,
     Rem,
     Neg,
+    Pop,
     Halt,
 }
 

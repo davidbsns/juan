@@ -4,6 +4,8 @@ use juan_bytecode::Opcode;
 use num_enum::TryFromPrimitiveError;
 use thiserror::Error;
 
+use crate::value::ValueType;
+
 #[derive(Debug, Error)]
 pub enum VMError {
     #[error("Chunk already exists: {0}")]
@@ -14,6 +16,9 @@ pub enum VMError {
 
     #[error("Invalid Opcode: {0}")]
     InvalidOpcode(u8),
+
+    #[error("Invalid operand type: {0:?}, expected: {1:?}")]
+    InvalidOperandType(ValueType, ValueType),
 
     #[error("Stack underflow")]
     StackUnderflow,

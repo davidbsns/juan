@@ -20,11 +20,23 @@ pub enum Literal {
     Int(i64),
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum Expr {
     Literal(Literal),
-    BinaryOp { op: Op, left: NodeId, right: NodeId },
-    UnaryOp { op: UnaryOp, operand: NodeId },
+    BinaryOp {
+        op: Op,
+        left: NodeId,
+        right: NodeId,
+    },
+    UnaryOp {
+        op: UnaryOp,
+        operand: NodeId,
+    },
+    // TODO: once statements are in, change NodeId to like a statementid
+    Block {
+        statements: Vec<NodeId>,
+        tail: Option<NodeId>,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]

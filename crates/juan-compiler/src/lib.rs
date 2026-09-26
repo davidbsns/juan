@@ -21,7 +21,7 @@ impl Compiler {
     fn compile_expr(&mut self, id: NodeId, tree: &SyntaxTree, chunk: &mut Chunk) {
         let node = &tree[id];
 
-        match node.expr {
+        match node.expr.clone() {
             Expr::Literal(literal) => match literal {
                 Literal::Int(i) => {
                     chunk.write_opcode(Opcode::PushInt);
@@ -52,6 +52,19 @@ impl Compiler {
                 };
 
                 chunk.write_opcode(opcode);
+            }
+
+            Expr::Block { statements, tail } => {
+                for id in statements {
+                    self.compile_expr(id, tree, chunk);
+                    chunk.write_opcode(Opcode::Pop);
+                }
+
+                if let Some(tail) = tail {
+                    self.compile_expr(tail, tree, chunk);
+                } else {
+                    chunk.write_opcode(Opcode::PushUnit);
+                }
             }
         }
     }
