@@ -13,7 +13,8 @@ pub enum Opcode {
     Rem,
     Neg,
     Pop,
-    Halt,
+    Call,
+    Return,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
@@ -35,6 +36,10 @@ impl Chunk {
     }
 
     pub fn write_i32(&mut self, value: i32) {
+        self.bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    pub fn write_u32(&mut self, value: u32) {
         self.bytes.extend_from_slice(&value.to_le_bytes());
     }
 

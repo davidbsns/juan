@@ -1,5 +1,6 @@
 use juan_ast::{
-    Expr, FunctionDecl, Literal, ModuleDecl, Node, NodeId, Op, ParsedModule, SyntaxTree, UnaryOp,
+    Expr, FunctionDecl, Literal, ModuleDecl, Node, NodeId, Op, ParsedModule, SyntaxTree, TypeRef,
+    UnaryOp,
 };
 use juan_lexer::{
     Lexer,
@@ -159,13 +160,29 @@ impl<'a> Parser<'a> {
         self.expect(TokenKind::LParen)?;
         self.expect(TokenKind::RParen)?;
 
+        let mut return_type = None;
+
+        if self.current_token.kind == TokenKind::Colon {
+            self.advance();
+
+            let type_token = self.expect(TokenKind::Identifier)?;
+            return_type = Some(TypeRef {
+                name: type_token.span.clone(),
+            });
+        }
+
         let body = self.parse_block()?;
         let (block_start, block_len) = self.tree[body].span.unpack::<usize>();
 
         let (start, _) = start_token.span.unpack();
         let span = Span::new(start, block_start + block_len);
 
-        Ok(FunctionDecl { name, span, body })
+        Ok(FunctionDecl {
+            name,
+            span,
+            body,
+            return_type,
+        })
     }
 
     fn parse_block(&mut self) -> Result<NodeId, ParserError> {
@@ -242,8 +259,6 @@ impl<'a> Parser<'a> {
             left = self.allocate(left, right, op);
         }
 
-        println!("{:?}", self.tree);
-
         Ok(left)
     }
 
@@ -267,8 +282,6 @@ impl<'a> Parser<'a> {
             let right = self.parse_factor()?;
             left = self.allocate(left, right, op);
         }
-
-        println!("{:?}", self.tree);
 
         Ok(left)
     }
@@ -294,7 +307,39 @@ impl<'a> Parser<'a> {
             return Ok(self.tree.alloc(node));
         }
 
-        self.parse_primary()
+        self.parse_postfix()
+    }
+
+    fn parse_postfix(&mut self) -> Result<NodeId, ParserError> {
+        let mut current_expr = self.parse_primary()?;
+
+        loop {
+            if self.paren_depth > 0 {
+                self.skip_newlines();
+            }
+
+            if self.current_token.kind != TokenKind::LParen {
+                return Ok(current_expr);
+            }
+
+            self.paren_depth += 1;
+            self.expect(TokenKind::LParen)?;
+            self.skip_newlines();
+
+            // TODO: handle args
+
+            self.paren_depth -= 1;
+            let (r_start, r_len) = self.expect(TokenKind::RParen)?.span.unpack::<usize>();
+
+            let (callee_start, _) = self.tree[current_expr].span.unpack();
+
+            current_expr = self.tree.alloc(Node {
+                expr: Expr::Call {
+                    callee: current_expr,
+                },
+                span: Span::new(callee_start, r_start + r_len),
+            })
+        }
     }
 
     fn parse_primary(&mut self) -> Result<NodeId, ParserError> {
@@ -333,6 +378,19 @@ impl<'a> Parser<'a> {
 
             TokenKind::LBrace => {
                 let idx = self.parse_block()?;
+
+                Ok(idx)
+            }
+
+            TokenKind::Identifier => {
+                // TODO: might delegate this into a parse_identifier function for consistency
+                let (ident_start, ident_len) =
+                    self.expect(TokenKind::Identifier)?.span.unpack::<usize>();
+
+                let idx = self.tree.alloc(Node {
+                    expr: Expr::Identifier,
+                    span: Span::new(ident_start, ident_start + ident_len),
+                });
 
                 Ok(idx)
             }

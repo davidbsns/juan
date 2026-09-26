@@ -1,12 +1,16 @@
 use std::{collections::HashMap, fs};
 
-use juan_ast::{Expr, Literal, NodeId, Op, ParsedModule, SyntaxTree, UnaryOp};
+use juan_ast::{Expr, FunctionDecl, Literal, NodeId, Op, ParsedModule, SyntaxTree, UnaryOp};
 use juan_bytecode::{Chunk, Opcode};
 
 use crate::error::CompilerError;
 
 pub struct Compiler {
     chunks: HashMap<String, Chunk>,
+
+    // TODO: this should probably be its own struct
+    functions: Vec<FunctionDecl>,
+    functions_lookup: HashMap<String, u32>,
 }
 
 pub mod error;
@@ -15,10 +19,19 @@ impl Compiler {
     pub fn new() -> Self {
         Self {
             chunks: HashMap::new(),
+            functions: vec![],
+            functions_lookup: HashMap::new(),
         }
     }
 
-    fn compile_expr(&mut self, id: NodeId, tree: &SyntaxTree, chunk: &mut Chunk) {
+    fn compile_expr(
+        &mut self,
+        id: NodeId,
+        tree: &SyntaxTree,
+        chunk: &mut Chunk,
+        module_name: &str,
+        src: &str,
+    ) {
         let node = &tree[id];
 
         match node.expr.clone() {
@@ -30,8 +43,8 @@ impl Compiler {
             },
 
             Expr::BinaryOp { op, left, right } => {
-                self.compile_expr(left, tree, chunk);
-                self.compile_expr(right, tree, chunk);
+                self.compile_expr(left, tree, chunk, module_name, src);
+                self.compile_expr(right, tree, chunk, module_name, src);
 
                 let opcode = match op {
                     Op::Add => Opcode::Add,
@@ -45,7 +58,7 @@ impl Compiler {
             }
 
             Expr::UnaryOp { op, operand } => {
-                self.compile_expr(operand, tree, chunk);
+                self.compile_expr(operand, tree, chunk, module_name, src);
 
                 let opcode = match op {
                     UnaryOp::Neg => Opcode::Neg,
@@ -56,41 +69,67 @@ impl Compiler {
 
             Expr::Block { statements, tail } => {
                 for id in statements {
-                    self.compile_expr(id, tree, chunk);
+                    self.compile_expr(id, tree, chunk, module_name, src);
                     chunk.write_opcode(Opcode::Pop);
                 }
 
                 if let Some(tail) = tail {
-                    self.compile_expr(tail, tree, chunk);
+                    self.compile_expr(tail, tree, chunk, module_name, src);
                 } else {
                     chunk.write_opcode(Opcode::PushUnit);
                 }
             }
+
+            Expr::Identifier => todo!("Yeah"),
+
+            // TODO: this currently only works for same-module calls
+            Expr::Call { callee } => {
+                let node = &tree[callee];
+                let (func_start, func_len) = node.span.unpack();
+
+                // TODO: should not always assume callee is an identifier expression
+                let func_name = &src[func_start..func_start + func_len];
+                let full_name = format!("{module_name}.{func_name}");
+
+                let func_id = self.functions_lookup[&full_name];
+
+                chunk.write_opcode(Opcode::Call);
+                chunk.write_u32(func_id);
+            }
         }
     }
 
-    pub fn read_module(&mut self, module: &ParsedModule, src: String) {
-        // TODO: only create chunks inside blocks/functions
-        //
-
+    pub fn read_module(&mut self, module: &ParsedModule, src: &str) {
         let (module_start, module_len) = module.decl.path_span.unpack();
         let module_name = &src[module_start..module_start + module_len];
 
+        // TODO: improve
+        // Function names
         for func in module.functions.iter() {
             let (func_start, func_len) = func.name.unpack();
             let func_name = &src[func_start..func_start + func_len];
 
+            let full_name = format!("{}.{}", module_name, func_name);
+
+            self.functions_lookup
+                .insert(full_name, self.functions.len() as u32);
+
+            self.functions.push(func.clone());
+        }
+
+        // Function Initialization
+        for func in module.functions.iter() {
+            let (func_start, func_len) = func.name.unpack();
+            let func_name = &src[func_start..func_start + func_len];
+
+            let full_name = format!("{}.{}", module_name, func_name);
+
             let mut chunk = Chunk::new();
 
-            self.compile_expr(func.body, &module.tree, &mut chunk);
-            chunk.write_opcode(Opcode::Halt);
+            self.compile_expr(func.body, &module.tree, &mut chunk, module_name, src);
+            chunk.write_opcode(Opcode::Return);
 
-            println!("{:?}", chunk);
-
-            self.chunks.insert(
-                format!("{}.{}", module_name.to_owned(), func_name.to_owned()),
-                chunk,
-            );
+            self.chunks.insert(full_name, chunk);
         }
     }
 
@@ -107,5 +146,9 @@ impl Compiler {
 
     pub fn get_chunk(&self, name: String) -> Option<&Chunk> {
         self.chunks.get(&name)
+    }
+
+    pub fn get_function_id(&self, name: String) -> u32 {
+        self.functions_lookup[&name]
     }
 }

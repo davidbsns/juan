@@ -24,6 +24,7 @@ pub enum TokenKind {
     RParen,
     LBrace,
     RBrace,
+    Colon,
 
     Identifier,
     Str,

@@ -1,5 +1,9 @@
 module math
 
-fn calculate() {
-    1 * 5
+fn get_num(): i32 {
+    67
+}
+
+fn calculate(): i32 {
+    get_num() * 4
 }

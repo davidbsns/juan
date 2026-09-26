@@ -23,6 +23,7 @@ pub enum Literal {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum Expr {
     Literal(Literal),
+    Identifier,
     BinaryOp {
         op: Op,
         left: NodeId,
@@ -37,6 +38,9 @@ pub enum Expr {
         statements: Vec<NodeId>,
         tail: Option<NodeId>,
     },
+    Call {
+        callee: NodeId,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -48,16 +52,22 @@ pub struct Node {
 pub type SyntaxTree = Arena<Node>;
 pub type NodeId = Idx<Node>;
 
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct TypeRef {
+    pub name: Span,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct ModuleDecl {
     pub path_span: Span,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct FunctionDecl {
     pub name: Span,
     pub span: Span,
     pub body: NodeId,
+    pub return_type: Option<TypeRef>,
 }
 
 #[derive(Debug, PartialEq, Eq)]

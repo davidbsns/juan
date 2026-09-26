@@ -34,6 +34,7 @@ impl<'a> Lexer<'a> {
             b')' => self.advance(TokenKind::RParen),
             b'{' => self.advance(TokenKind::LBrace),
             b'}' => self.advance(TokenKind::RBrace),
+            b':' => self.advance(TokenKind::Colon),
             b'+' => self.advance(TokenKind::Plus),
             b'-' => self.advance(TokenKind::Minus),
             b'*' => self.advance(TokenKind::Star),

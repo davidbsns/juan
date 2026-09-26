@@ -19,14 +19,24 @@ fn main() -> Result<(), JuanError> {
     let module = Parser::new(&mut lexer).parse()?;
     let mut compiler = Compiler::new();
 
-    compiler.read_module(&module, input);
+    compiler.read_module(&module, input.as_str());
     compiler.emit()?;
 
     let math = String::from("math.calculate");
-    let chunk = compiler.get_chunk(math.clone()).unwrap();
+    let get_num = String::from("math.get_num");
 
-    vm.load(math.clone(), chunk.clone())?;
-    vm.run(math)?;
+    let chunk = compiler.get_chunk(get_num.clone()).unwrap();
+    let func_id = compiler.get_function_id(get_num.clone());
+
+    vm.load(get_num.clone(), func_id, chunk.clone())?;
+
+    let chunk = compiler.get_chunk(math.clone()).unwrap();
+    let func_id = compiler.get_function_id(math.clone());
+
+    vm.load(math.clone(), func_id, chunk.clone())?;
+
+    let value = vm.run(func_id)?;
+    println!("{:?}", value);
 
     Ok(())
 }
