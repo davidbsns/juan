@@ -31,7 +31,8 @@ impl Compiler {
         chunk: &mut Chunk,
         module_name: &str,
         src: &str,
-    ) {
+        params: HashMap<&str, u32>,
+    ) -> Result<(), CompilerError> {
         let node = &tree[id];
 
         match node.expr.clone() {
@@ -43,8 +44,8 @@ impl Compiler {
             },
 
             Expr::BinaryOp { op, left, right } => {
-                self.compile_expr(left, tree, chunk, module_name, src);
-                self.compile_expr(right, tree, chunk, module_name, src);
+                self.compile_expr(left, tree, chunk, module_name, src, params.clone())?;
+                self.compile_expr(right, tree, chunk, module_name, src, params)?;
 
                 let opcode = match op {
                     Op::Add => Opcode::Add,
@@ -58,7 +59,7 @@ impl Compiler {
             }
 
             Expr::UnaryOp { op, operand } => {
-                self.compile_expr(operand, tree, chunk, module_name, src);
+                self.compile_expr(operand, tree, chunk, module_name, src, params)?;
 
                 let opcode = match op {
                     UnaryOp::Neg => Opcode::Neg,
@@ -69,21 +70,30 @@ impl Compiler {
 
             Expr::Block { statements, tail } => {
                 for id in statements {
-                    self.compile_expr(id, tree, chunk, module_name, src);
+                    self.compile_expr(id, tree, chunk, module_name, src, params.clone())?;
                     chunk.write_opcode(Opcode::Pop);
                 }
 
                 if let Some(tail) = tail {
-                    self.compile_expr(tail, tree, chunk, module_name, src);
+                    self.compile_expr(tail, tree, chunk, module_name, src, params)?;
                 } else {
                     chunk.write_opcode(Opcode::PushUnit);
                 }
             }
 
-            Expr::Identifier => todo!("Yeah"),
+            Expr::Identifier => {
+                let (name_start, name_len) = node.span.unpack();
+                let ident_name = &src[name_start..name_start + name_len];
+
+                // TODO: error handling
+                let param_id = params[ident_name];
+
+                chunk.write_opcode(Opcode::LoadLocal);
+                chunk.write_u32(param_id);
+            }
 
             // TODO: this currently only works for same-module calls
-            Expr::Call { callee, .. } => {
+            Expr::Call { callee, args } => {
                 let node = &tree[callee];
                 let (func_start, func_len) = node.span.unpack();
 
@@ -92,14 +102,30 @@ impl Compiler {
                 let full_name = format!("{module_name}.{func_name}");
 
                 let func_id = self.functions_lookup[&full_name];
+                let func = &self.functions[func_id as usize];
+
+                if args.len() != func.params.len() {
+                    return Err(CompilerError::ArgumentCountMismatch(
+                        full_name,
+                        func.params.len() as u32,
+                        args.len() as u32,
+                    ));
+                }
+
+                for arg in &args {
+                    self.compile_expr(*arg, tree, chunk, module_name, src, params.clone())?;
+                }
 
                 chunk.write_opcode(Opcode::Call);
                 chunk.write_u32(func_id);
+                chunk.write_u32(args.len() as u32);
             }
         }
+
+        Ok(())
     }
 
-    pub fn read_module(&mut self, module: &ParsedModule, src: &str) {
+    pub fn read_module(&mut self, module: &ParsedModule, src: &str) -> Result<(), CompilerError> {
         let (module_start, module_len) = module.decl.path_span.unpack();
         let module_name = &src[module_start..module_start + module_len];
 
@@ -126,11 +152,33 @@ impl Compiler {
 
             let mut chunk = Chunk::new();
 
-            self.compile_expr(func.body, &module.tree, &mut chunk, module_name, src);
+            let mut params: HashMap<&str, u32> = HashMap::new();
+
+            for param in func.params.iter() {
+                let (name_start, name_len) = param.name.unpack();
+                let param_name = &src[name_start..name_start + name_len];
+
+                if params.contains_key(param_name) {
+                    return Err(CompilerError::DuplicateParameterName(param_name.to_owned()));
+                }
+
+                params.insert(param_name, params.len() as u32);
+            }
+
+            self.compile_expr(
+                func.body,
+                &module.tree,
+                &mut chunk,
+                module_name,
+                src,
+                params,
+            )?;
             chunk.write_opcode(Opcode::Return);
 
             self.chunks.insert(full_name, chunk);
         }
+
+        Ok(())
     }
 
     pub fn emit(&self) -> Result<(), CompilerError> {

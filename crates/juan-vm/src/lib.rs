@@ -47,165 +47,148 @@ impl VM {
         });
 
         while let Some(call_frame) = call_frames.last_mut() {
-            let Some(chunk) = self.chunks.get(&call_frame.function_id) else {
-                return Err(VMError::ChunkDoesntExist(format!(
-                    "Id: {}",
-                    call_frame.function_id
-                )));
-            };
+            let chunk = self.get_chunk(call_frame.function_id)?;
 
             let bytes = chunk.bytes();
 
-            if call_frame.ip < bytes.len() {
-                let byte = bytes[call_frame.ip];
-                call_frame.ip += 1;
-
-                match Opcode::try_from(byte) {
-                    Ok(Opcode::PushInt) => {
-                        let Some(numbers) = bytes.get(call_frame.ip..call_frame.ip + 4) else {
-                            return Err(VMError::UnexpectedEndOfBytecode(call_frame.ip));
-                        };
-
-                        let numbers: &[u8; 4] = numbers.try_into()?;
-                        let num = i32::from_le_bytes(*numbers);
-
-                        stack.push(Value::I32(num));
-                        call_frame.ip += 4;
-                    }
-
-                    Ok(Opcode::Call) => {
-                        let Some(numbers) = bytes.get(call_frame.ip..call_frame.ip + 4) else {
-                            return Err(VMError::UnexpectedEndOfBytecode(call_frame.ip));
-                        };
-
-                        let numbers: &[u8; 4] = numbers.try_into()?;
-                        let func_id = u32::from_le_bytes(*numbers);
-                        call_frame.ip += 4;
-
-                        call_frames.push(CallFrame {
-                            function_id: func_id,
-                            ip: 0,
-                            stack_base: stack.len(),
-                        });
-                    }
-
-                    Ok(Opcode::Pop) => match stack.pop() {
-                        Some(_) => {}
-                        None => return Err(VMError::StackUnderflow),
-                    },
-
-                    Ok(Opcode::PushUnit) => {
-                        stack.push(Value::Unit);
-                    }
-
-                    Ok(Opcode::Neg) => {
-                        let Some(operand) = stack.pop() else {
-                            return Err(VMError::StackUnderflow);
-                        };
-
-                        match operand {
-                            Value::I32(i) => match i.checked_neg() {
-                                Some(a) => stack.push(Value::I32(a)),
-                                None => return Err(VMError::UnaryIntegerOverflow(i, '-')),
-                            },
-
-                            invalid => {
-                                return Err(VMError::InvalidOperandType(
-                                    invalid.kind(),
-                                    ValueType::I32,
-                                ));
-                            }
-                        }
-                    }
-
-                    Ok(
-                        op @ (Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Div | Opcode::Rem),
-                    ) => {
-                        let Some(rhs) = stack.pop() else {
-                            return Err(VMError::StackUnderflow);
-                        };
-                        let Some(lhs) = stack.pop() else {
-                            return Err(VMError::StackUnderflow);
-                        };
-
-                        let rhs = match rhs {
-                            Value::I32(i) => i,
-
-                            invalid => {
-                                return Err(VMError::InvalidOperandType(
-                                    invalid.kind(),
-                                    ValueType::I32,
-                                ));
-                            }
-                        };
-
-                        let lhs = match lhs {
-                            Value::I32(i) => i,
-
-                            invalid => {
-                                return Err(VMError::InvalidOperandType(
-                                    invalid.kind(),
-                                    ValueType::I32,
-                                ));
-                            }
-                        };
-
-                        let (op_char, res) = match op {
-                            Opcode::Add => ('+', lhs.checked_add(rhs)),
-                            Opcode::Sub => ('-', lhs.checked_sub(rhs)),
-                            Opcode::Mul => ('*', lhs.checked_mul(rhs)),
-                            Opcode::Rem => {
-                                if rhs == 0 {
-                                    return Err(VMError::RemainderByZero);
-                                }
-
-                                ('%', lhs.checked_rem(rhs))
-                            }
-                            Opcode::Div => {
-                                if rhs == 0 {
-                                    return Err(VMError::DivisionByZero);
-                                }
-
-                                ('/', lhs.checked_div(rhs))
-                            }
-                            _ => unreachable!(),
-                        };
-
-                        match res {
-                            Some(a) => stack.push(Value::I32(a)),
-                            None => return Err(VMError::IntegerOverflow(lhs, rhs, op_char)),
-                        }
-                    }
-
-                    Ok(Opcode::Return) => {
-                        let Some(frame) = call_frames.pop() else {
-                            return Err(VMError::StackUnderflow);
-                        };
-
-                        if stack.len() <= frame.stack_base {
-                            return Err(VMError::StackUnderflow);
-                        }
-
-                        let Some(value) = stack.pop() else {
-                            return Err(VMError::StackUnderflow);
-                        };
-
-                        stack.truncate(frame.stack_base);
-
-                        if call_frames.is_empty() {
-                            return Ok(value);
-                        } else {
-                            stack.push(value);
-                        }
-                    }
-
-                    Err(e) => return Err(VMError::TryFromPrimitiveOpcode(e)),
-                }
-            } else {
+            if call_frame.ip >= bytes.len() {
                 return Err(VMError::UnexpectedEndOfBytecode(call_frame.ip));
+            }
+
+            let byte = bytes[call_frame.ip];
+            call_frame.ip += 1;
+
+            match Opcode::try_from(byte) {
+                Ok(Opcode::PushInt) => {
+                    let num = self.read_i32(&mut call_frame.ip, bytes)?;
+                    stack.push(Value::I32(num));
+                }
+
+                Ok(Opcode::Call) => {
+                    let func_id = self.read_u32(&mut call_frame.ip, bytes)?;
+                    let arg_count = self.read_u32(&mut call_frame.ip, bytes)?;
+
+                    let stack_base = stack
+                        .len()
+                        .checked_sub(arg_count as usize)
+                        .ok_or(VMError::StackUnderflow)?;
+
+                    call_frames.push(CallFrame {
+                        function_id: func_id,
+                        ip: 0,
+                        stack_base,
+                    });
+                }
+
+                Ok(Opcode::LoadLocal) => {
+                    let id = self.read_u32(&mut call_frame.ip, bytes)?;
+                    let pos = call_frame.stack_base + id as usize;
+                    let value = stack.get(pos).ok_or(VMError::InvalidSlot(pos))?;
+
+                    stack.push(*value);
+                }
+
+                Ok(Opcode::Pop) => {
+                    stack.pop().ok_or(VMError::StackUnderflow)?;
+                }
+
+                Ok(Opcode::PushUnit) => {
+                    stack.push(Value::Unit);
+                }
+
+                Ok(Opcode::Neg) => {
+                    let operand = self.pop_i32(&mut stack)?;
+
+                    match operand.checked_neg() {
+                        Some(i) => stack.push(Value::I32(i)),
+                        None => return Err(VMError::UnaryIntegerOverflow(operand, '-')),
+                    }
+                }
+
+                Ok(op @ (Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Div | Opcode::Rem)) => {
+                    let rhs = self.pop_i32(&mut stack)?;
+                    let lhs = self.pop_i32(&mut stack)?;
+
+                    let (op_char, res) = match op {
+                        Opcode::Add => ('+', lhs.checked_add(rhs)),
+                        Opcode::Sub => ('-', lhs.checked_sub(rhs)),
+                        Opcode::Mul => ('*', lhs.checked_mul(rhs)),
+                        Opcode::Rem => {
+                            if rhs == 0 {
+                                return Err(VMError::RemainderByZero);
+                            }
+
+                            ('%', lhs.checked_rem(rhs))
+                        }
+                        Opcode::Div => {
+                            if rhs == 0 {
+                                return Err(VMError::DivisionByZero);
+                            }
+
+                            ('/', lhs.checked_div(rhs))
+                        }
+                        _ => unreachable!(),
+                    };
+
+                    match res {
+                        Some(a) => stack.push(Value::I32(a)),
+                        None => return Err(VMError::IntegerOverflow(lhs, rhs, op_char)),
+                    }
+                }
+
+                Ok(Opcode::Return) => {
+                    let frame = call_frames.pop().ok_or(VMError::StackUnderflow)?;
+
+                    if stack.len() <= frame.stack_base {
+                        return Err(VMError::StackUnderflow);
+                    }
+
+                    let value = stack.pop().ok_or(VMError::StackUnderflow)?;
+                    stack.truncate(frame.stack_base);
+
+                    if call_frames.is_empty() {
+                        return Ok(value);
+                    }
+
+                    stack.push(value);
+                }
+
+                Err(e) => return Err(VMError::TryFromPrimitiveOpcode(e)),
             }
         }
 
         Ok(Value::Unit)
+    }
+}
+
+impl VM {
+    fn fetch_4_bytes(&self, ip: &mut usize, bytes: &[u8]) -> Result<[u8; 4], VMError> {
+        let Some(slice) = bytes.get(*ip..*ip + 4) else {
+            return Err(VMError::UnexpectedEndOfBytecode(*ip));
+        };
+
+        *ip += 4;
+        Ok(slice.try_into()?)
+    }
+
+    fn read_u32(&self, ip: &mut usize, bytes: &[u8]) -> Result<u32, VMError> {
+        Ok(u32::from_le_bytes(self.fetch_4_bytes(ip, bytes)?))
+    }
+
+    fn read_i32(&self, ip: &mut usize, bytes: &[u8]) -> Result<i32, VMError> {
+        Ok(i32::from_le_bytes(self.fetch_4_bytes(ip, bytes)?))
+    }
+
+    fn pop_i32(&self, stack: &mut Vec<Value>) -> Result<i32, VMError> {
+        match stack.pop().ok_or(VMError::StackUnderflow)? {
+            Value::I32(i) => Ok(i),
+            invalid => Err(VMError::InvalidOperandType(invalid.kind(), ValueType::I32)),
+        }
+    }
+
+    fn get_chunk(&self, func_id: u32) -> Result<&Chunk, VMError> {
+        self.chunks
+            .get(&func_id)
+            .ok_or_else(|| VMError::ChunkDoesntExist(format!("Id: {func_id}")))
     }
 }

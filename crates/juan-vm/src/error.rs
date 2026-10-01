@@ -23,6 +23,9 @@ pub enum VMError {
     #[error("Stack underflow")]
     StackUnderflow,
 
+    #[error("Invalid Slot: {0}")]
+    InvalidSlot(usize),
+
     #[error("Integer overflow: {0} {2} {1}")]
     IntegerOverflow(i32, i32, char),
 

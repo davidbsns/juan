@@ -10,7 +10,7 @@ use crate::error::JuanError;
 
 mod error;
 
-fn main() -> Result<(), JuanError> {
+fn run() -> Result<(), JuanError> {
     let path = Path::new("./samples/math.juan");
     let input = fs::read_to_string(path).expect("Invalid input");
 
@@ -19,7 +19,7 @@ fn main() -> Result<(), JuanError> {
     let module = Parser::new(&mut lexer).parse()?;
     let mut compiler = Compiler::new();
 
-    compiler.read_module(&module, input.as_str());
+    compiler.read_module(&module, input.as_str())?;
     compiler.emit()?;
 
     let math = String::from("math.calculate");
@@ -39,4 +39,13 @@ fn main() -> Result<(), JuanError> {
     println!("{:?}", value);
 
     Ok(())
+}
+
+fn main() {
+    let result = run();
+
+    match result {
+        Ok(_) => (),
+        Err(err) => eprintln!("{err}"),
+    }
 }

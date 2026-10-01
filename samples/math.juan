@@ -1,9 +1,9 @@
 module math
 
 fn get_num(num: i32): i32 {
-    num
+    num + num
 }
 
 fn calculate(): i32 {
-    get_num(67) * 4
+    get_num(2) * 4
 }

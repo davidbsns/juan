@@ -6,6 +6,7 @@ use num_enum::TryFromPrimitive;
 pub enum Opcode {
     PushInt,
     PushUnit,
+    LoadLocal,
     Add,
     Sub,
     Mul,
