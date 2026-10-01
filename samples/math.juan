@@ -1,9 +1,11 @@
 module math
 
-fn get_num(num: i32): i32 {
-    num + num
+fn get_num(left: i32, right: i32): i32 {
+    left + right
+    left - right
 }
 
 fn calculate(): i32 {
-    get_num(2) * 4
+    get_num(10, 3)
+    100 + get_num(get_num(20, 3), get_num(9, 4)) * 2
 }

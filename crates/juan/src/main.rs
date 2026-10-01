@@ -26,12 +26,12 @@ fn run() -> Result<(), JuanError> {
     let get_num = String::from("math.get_num");
 
     let chunk = compiler.get_chunk(get_num.clone()).unwrap();
-    let func_id = compiler.get_function_id(get_num.clone());
+    let func_id = compiler.get_function_id(get_num.clone())?;
 
     vm.load(get_num.clone(), func_id, chunk.clone())?;
 
     let chunk = compiler.get_chunk(math.clone()).unwrap();
-    let func_id = compiler.get_function_id(math.clone());
+    let func_id = compiler.get_function_id(math.clone())?;
 
     vm.load(math.clone(), func_id, chunk.clone())?;
 
